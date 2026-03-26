@@ -1,0 +1,4 @@
+id,cliente,direccion,latitud,longitud,peso_kg,volumen_m3
+1,Cliente A,Centro Jalapa,14.6347,-89.9889,10,0.5
+2,Cliente B,Plaza San Juan,14.6400,-89.9850,5,0.2
+3,Cliente C,Mercado Municipal,14.6300,-89.9900,8,0.4
