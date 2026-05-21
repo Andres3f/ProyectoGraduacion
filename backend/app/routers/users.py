@@ -3,10 +3,11 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import get_current_user, require_role
+from app.auth.passwords import hash_password
 from app.database import get_db
 from app.models.user import User, RoleEnum
-from app.schemas.user import UserOut, UserUpdate
-from app.auth.dependencies import get_current_user, require_role
+from app.schemas.user import UserOut, UserUpdate, UserCreate
 
 router = APIRouter(prefix="/api/users", tags=["Usuarios"])
 
@@ -17,7 +18,33 @@ def read_current_user(current_user: User = Depends(get_current_user)):
     return current_user
 
 
-@router.get("/", response_model=List[UserOut])
+@router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+def create_user(
+    user_in: UserCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role([RoleEnum.admin])),
+):
+    """Crear un nuevo usuario (solo admin)."""
+    existing = db.query(User).filter(User.email == user_in.email).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El email ya está registrado",
+        )
+
+    user = User(
+        email=user_in.email,
+        full_name=user_in.full_name,
+        hashed_password=hash_password(user_in.password),
+        role=user_in.role,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.get("", response_model=List[UserOut])
 def list_users(
     db: Session = Depends(get_db),
     _: User = Depends(require_role([RoleEnum.admin, RoleEnum.gerente])),

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 const stats = [
@@ -34,29 +35,38 @@ export default function DashboardPage() {
         <h2 className="text-lg font-semibold text-gray-900 mb-4">
           Acceso rápido
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <a
-            href="/orders"
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <Link
+            to="/orders"
             className="flex items-center gap-3 p-4 rounded-xl bg-brand-50 hover:bg-brand-100 transition"
           >
             <span className="text-2xl">📋</span>
             <span className="font-medium text-brand-700">Ver pedidos</span>
-          </a>
-          <a
-            href="/routes"
+          </Link>
+          <Link
+            to="/routes"
             className="flex items-center gap-3 p-4 rounded-xl bg-brand-50 hover:bg-brand-100 transition"
           >
             <span className="text-2xl">🗺️</span>
             <span className="font-medium text-brand-700">Optimizar rutas</span>
-          </a>
-          <a
-            href="/map"
+          </Link>
+          <Link
+            to="/map"
             className="flex items-center gap-3 p-4 rounded-xl bg-brand-50 hover:bg-brand-100 transition"
           >
             <span className="text-2xl">📍</span>
             <span className="font-medium text-brand-700">Ver mapa</span>
-          </a>
+          </Link>
         </div>
+
+        {user?.role === 'admin' && (
+          <Link
+            to="/users/new"
+            className="inline-flex items-center justify-center rounded-2xl bg-brand-600 px-6 py-3 text-white font-semibold hover:bg-brand-700 transition"
+          >
+            ➕ Agregar nuevo usuario
+          </Link>
+        )}
       </div>
     </div>
   );
