@@ -6,7 +6,7 @@ from app.models.user import RoleEnum
 
 # ── Request ───────────────────────────────────────────────────
 class UserCreate(BaseModel):
-    email: str
+    email: EmailStr
     full_name: str
     password: str
     role: RoleEnum = RoleEnum.conductor

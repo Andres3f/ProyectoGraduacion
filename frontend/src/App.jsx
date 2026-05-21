@@ -7,6 +7,7 @@ import DashboardPage from './pages/DashboardPage';
 import OrdersPage from './pages/OrdersPage';
 import RoutesPage from './pages/RoutesPage';
 import MapPage from './pages/MapPage';
+import AddUserPage from './pages/AddUserPage';
 
 function App() {
   const { user } = useAuth();
@@ -25,6 +26,7 @@ function App() {
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/routes" element={<RoutesPage />} />
             <Route path="/map" element={<MapPage />} />
+            <Route path="/users/new" element={<AddUserPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
