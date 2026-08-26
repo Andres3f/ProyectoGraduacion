@@ -25,6 +25,16 @@ services:
     depends_on:
       - db
 
+  pgadmin:
+    image: dpage/pgadmin4
+    ports:
+      - "8080:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    depends_on:
+      - db
+
   frontend:
     build: ./frontend
     ports:
