@@ -3,6 +3,7 @@ import enum
 from sqlalchemy import (
     Column, Integer, String, Float, Enum, DateTime, ForeignKey, func,
 )
+from sqlalchemy.orm import relationship
 from geoalchemy2 import Geography
 
 from app.database import Base
@@ -20,6 +21,9 @@ class Order(Base):
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
+    client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
+    # Columnas denormalizadas (snapshot del cliente) para no romper el
+    # frontend ni el optimizador. Se mantienen sincronizadas con el cliente.
     client_name = Column(String(255), nullable=False)
     address = Column(String(500), nullable=False)
     latitude = Column(Float, nullable=False)
@@ -36,3 +40,5 @@ class Order(Base):
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    client = relationship("Client")
