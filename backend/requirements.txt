@@ -12,3 +12,5 @@ pydantic-settings==2.5.2
 email-validator>=2.0
 ortools==9.10.4067
 python-dotenv==1.0.1
+pandas>=2.0
+openpyxl>=3.1

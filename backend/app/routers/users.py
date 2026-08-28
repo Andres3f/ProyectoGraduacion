@@ -69,3 +69,40 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.get("/{user_id}", response_model=UserOut)
+def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role([RoleEnum.admin])),
+):
+    """Ver detalle de un usuario (solo admin)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return user
+
+
+@router.delete("/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([RoleEnum.admin])),
+):
+    """Desactivar usuario (solo admin).
+
+    Soft delete: en lugar de borrar la fila (lo que rompería las FK de
+    ``orders.created_by`` y ``routes.driver_id``), se marca ``is_active=False``.
+    """
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=400, detail="No puedes desactivar tu propio usuario"
+        )
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    user.is_active = False
+    db.commit()
+    db.refresh(user)
+    return {"detail": "Usuario desactivado", "id": user.id}

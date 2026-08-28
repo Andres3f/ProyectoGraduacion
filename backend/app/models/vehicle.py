@@ -1,6 +1,8 @@
 import enum
 
-from sqlalchemy import Column, Integer, String, Float, Enum, Boolean, DateTime, func
+from sqlalchemy import (
+    Column, Integer, String, Float, Enum, Boolean, DateTime, ForeignKey, func,
+)
 from app.database import Base
 
 
@@ -18,6 +20,7 @@ class Vehicle(Base):
     description = Column(String(255), nullable=True)
     capacity_kg = Column(Float, nullable=False, default=10000)
     capacity_m3 = Column(Float, nullable=False, default=20)
+    driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(
         Enum(VehicleStatus), nullable=False, default=VehicleStatus.disponible
     )
