@@ -23,6 +23,7 @@ async def lifespan(app: FastAPI):
     import app.models.order  # noqa: F401
     import app.models.vehicle  # noqa: F401
     import app.models.route  # noqa: F401
+    import app.models.route_stop  # noqa: F401
     import app.models.client  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
