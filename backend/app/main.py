@@ -7,7 +7,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, users, orders, vehicles, routes, route_stops, clients
+from app.routers import (
+    auth, users, orders, vehicles, routes, route_stops, clients, dashboard,
+)
 from app.seed import create_initial_admin
 
 logging.basicConfig(level=logging.INFO)
@@ -64,6 +66,7 @@ app.include_router(vehicles.router)
 app.include_router(routes.router)
 app.include_router(route_stops.router)
 app.include_router(clients.router)
+app.include_router(dashboard.router)
 
 
 @app.get("/health", tags=["Sistema"])
