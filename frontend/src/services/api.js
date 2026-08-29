@@ -13,14 +13,20 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Interceptor para manejar errores 401 (sesión expirada)
+// Interceptor para manejar errores 401 (sesión expirada).
+// Evita un bucle de redirección si el usuario ya se encuentra en /login: solo
+// limpia la sesión y redirige cuando no está en la página de login.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    if (status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      const isOnAuth = window.location.pathname.startsWith('/login');
+      if (!isOnAuth) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

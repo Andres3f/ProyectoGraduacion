@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import auth, users, orders, vehicles, routes, clients
+from app.routers import auth, users, orders, vehicles, routes, route_stops, clients
 from app.seed import create_initial_admin
 
 logging.basicConfig(level=logging.INFO)
@@ -40,10 +40,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS ──────────────────────────────────────────────────────
+# ── CORS (OPT-20) ─────────────────────────────────────────────
+# Orígenes permitidos desde config/entorno. El backend no usa "*" en
+# producción: cada origen explícito permite credenciales de forma segura.
+_frontend_origins = [
+    o.strip()
+    for o in settings.FRONTEND_ORIGINS.split(",")
+    if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=_frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,6 +62,7 @@ app.include_router(users.router)
 app.include_router(orders.router)
 app.include_router(vehicles.router)
 app.include_router(routes.router)
+app.include_router(route_stops.router)
 app.include_router(clients.router)
 
 

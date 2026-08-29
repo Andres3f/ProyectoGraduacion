@@ -18,6 +18,12 @@ class RouteStopOut(BaseModel):
     eta: Optional[datetime] = None
     distance_from_previous_km: Optional[float] = None
     status: str
+    delivered_at: Optional[datetime] = None
+    client_name: str = ""
+    address: str = ""
+    latitude: float = 0.0
+    longitude: float = 0.0
+    weight_kg: float = 0.0
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -8,7 +8,10 @@ import OrdersPage from './pages/OrdersPage';
 import RoutesPage from './pages/RoutesPage';
 import MapPage from './pages/MapPage';
 import AddUserPage from './pages/AddUserPage';
-import PlaceholderPage from './pages/PlaceholderPage';
+import MyRoutePage from './pages/MyRoutePage';
+import VehiclesPage from './pages/VehiclesPage';
+import ClientsPage from './pages/ClientsPage';
+import ReportsPage from './pages/ReportsPage';
 
 function App() {
   const { user } = useAuth();
@@ -22,16 +25,18 @@ function App() {
             path="/login"
             element={user ? <Navigate to="/" /> : <LoginPage />}
           />
-          <Route element={<ProtectedRoute />}>
+          <Route element={<ProtectedRoute allowedRoles={['admin', 'planificador', 'gerente', 'conductor']} />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/routes" element={<RoutesPage />} />
             <Route path="/map" element={<MapPage />} />
             <Route path="/users/new" element={<AddUserPage />} />
-            <Route path="/vehicles" element={<PlaceholderPage title="Vehículos" />} />
-            <Route path="/clients" element={<PlaceholderPage title="Clientes" />} />
-            <Route path="/my-route" element={<PlaceholderPage title="Mi Ruta" />} />
-            <Route path="/dashboard-gerente" element={<PlaceholderPage title="KPIs gerente" />} />
+            <Route path="/my-route" element={<MyRoutePage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+            <Route path="/vehicles" element={<VehiclesPage />} />
+            <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/reports" element={<ReportsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

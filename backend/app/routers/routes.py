@@ -22,9 +22,44 @@ router = APIRouter(prefix="/api/routes", tags=["Rutas"])
 @router.get("/", response_model=List[RouteOut])
 def list_routes(
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(
+        require_role([RoleEnum.admin, RoleEnum.planificador, RoleEnum.gerente])
+    ),
 ):
+    """Listar todas las rutas (administrativo).
+
+    Un conductor nunca debe ver las rutas de todos: usa `GET /api/routes/my-route`.
+    """
     return db.query(Route).all()
+
+
+@router.get("/my-route", response_model=RouteOut)
+def get_my_route(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([RoleEnum.conductor])),
+):
+    """Devuelve la ruta activa/pendiente del conductor autenticado (OPT-18)."""
+    route = (
+        db.query(Route)
+        .filter(
+            Route.driver_id == current_user.id,
+            Route.status == RouteStatus.en_progreso,
+        )
+        .first()
+    )
+    if not route:
+        route = (
+            db.query(Route)
+            .filter(
+                Route.driver_id == current_user.id,
+                Route.status == RouteStatus.planificada,
+            )
+            .order_by(Route.created_at.desc())
+            .first()
+        )
+    if not route:
+        raise HTTPException(status_code=404, detail="No tienes rutas asignadas")
+    return route
 
 
 def _load_orders(db: Session, order_ids: List[int]) -> List[Order]:

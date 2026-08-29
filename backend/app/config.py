@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     APP_NAME: str = "Optirutas Jalapa"
     DEBUG: bool = True
 
+    # ── CORS (OPT-20) ──────────────────────────────────────────
+    # Orígenes permitidos separados por coma en la variable de entorno
+    # FRONTEND_ORIGINS. Para producción se debe apuntar al dominio real del
+    # frontend; nunca usar "*" con allow_credentials=True.
+    FRONTEND_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+
     # ── Optimizador / geografía (Sprint 3) ─────────────────────
     # Depósito base (centro de Jalapa, GT).
     DEPOT_LAT: float = 14.6347
