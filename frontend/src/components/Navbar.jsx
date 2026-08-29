@@ -7,6 +7,7 @@ const MENU_BY_ROLE = {
     { to: '/orders', label: 'Pedidos' },
     { to: '/vehicles', label: 'Vehículos' },
     { to: '/clients', label: 'Clientes' },
+    { to: '/reports', label: 'Reportes' },
     { to: '/users/new', label: 'Usuarios' },
   ],
   planificador: [

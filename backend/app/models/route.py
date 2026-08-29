@@ -40,5 +40,6 @@ class Route(Base):
     # Paradas relacionadas (tabla route_stops), ordenadas por secuencia.
     # `RouteOut.stops` se puebla desde aquí (no desde el JSON).
     stops = relationship(
-        "RouteStop", order_by="RouteStop.sequence", cascade="all, delete-orphan"
+        "RouteStop", order_by="RouteStop.sequence", back_populates="route",
+        cascade="all, delete-orphan"
     )

@@ -25,22 +25,24 @@ export default function RoutesPage() {
   const [selectedVehicles, setSelectedVehicles] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
   const loadData = () => {
     setLoading(true);
+    setLoadError(null);
     api
       .get('/routes/')
       .then((res) => setRoutes(res.data))
-      .catch(() => {})
+      .catch((err) => setLoadError(getErrorMessage(err, 'No se pudo cargar las rutas.')))
       .finally(() => setLoading(false));
     api
       .get('/orders/')
       .then((res) => setOrders(res.data))
-      .catch(() => {});
+      .catch((err) => setLoadError((prev) => prev || getErrorMessage(err, 'No se pudo cargar los pedidos.')));
     api
       .get('/vehicles/')
       .then((res) => setVehicles(res.data))
-      .catch(() => {});
+      .catch((err) => setLoadError((prev) => prev || getErrorMessage(err, 'No se pudo cargar los vehículos.')));
   };
 
   useEffect(loadData, []);
@@ -95,6 +97,12 @@ export default function RoutesPage() {
       {error && (
         <div className="mb-4 bg-red-50 text-red-700 text-sm rounded-lg p-3">
           {error}
+        </div>
+      )}
+
+      {loadError && (
+        <div className="mb-4 bg-yellow-50 text-yellow-800 text-sm rounded-lg p-3">
+          {loadError}
         </div>
       )}
 

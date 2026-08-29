@@ -7,6 +7,7 @@ export default function MapPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     Promise.all([api.get('/routes/'), api.get('/orders/')])
@@ -14,7 +15,12 @@ export default function MapPage() {
         setRoutes(routesRes.data);
         setOrders(ordersRes.data);
       })
-      .catch(() => {})
+      .catch((err) => {
+        const detail = err?.response?.data?.detail;
+        setLoadError(
+          typeof detail === 'string' ? detail : 'No se pudo cargar el mapa.'
+        );
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -29,18 +35,16 @@ export default function MapPage() {
       stops: (r.stops || [])
         .map((s) => {
           const o = orderById[s.order_id];
-          return o
-            ? {
-                ...s,
-                lat: o.latitude,
-                lng: o.longitude,
-                client_name: o.client_name,
-                address: o.address,
-                weight_kg: o.weight_kg,
-              }
-            : null;
+          return {
+            ...s,
+            lat: s.lat ?? o?.latitude ?? 0,
+            lng: s.lng ?? o?.longitude ?? 0,
+            client_name: s.client_name || o?.client_name || '',
+            address: s.address || o?.address || '',
+            weight_kg: s.weight_kg ?? o?.weight_kg ?? 0,
+          };
         })
-        .filter(Boolean),
+        .filter((s) => s.lat && s.lng),
     }))
     .filter((r) => r.stops.length > 0);
 
@@ -68,6 +72,12 @@ export default function MapPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-6">
         📍 Mapa de rutas optimizadas
       </h1>
+
+      {loadError && (
+        <div className="mb-4 bg-yellow-50 text-yellow-800 text-sm rounded-lg p-3">
+          {loadError}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12">
