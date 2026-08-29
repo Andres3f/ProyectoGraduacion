@@ -58,6 +58,30 @@ npm install
 npm run dev
 ```
 
+## Datos de demostración (seed)
+
+El sistema arranca creando automáticamente el usuario `admin`. Para cargar un
+set de datos realistas de Jalapa (4 usuarios por rol, ~30 clientes, 5
+vehículos, ~100 pedidos y 20 rutas optimizadas) y poder ver el dashboard del
+Gerente desde el primer arranque, ejecuta:
+
+```bash
+cd backend
+source venv/bin/activate  # o venv\Scripts\activate en Windows
+python -m app.seed
+```
+
+El seed es **idempotente**: correrlo varias veces no duplica datos.
+
+Credenciales de demostración:
+
+| Rol | Email | Contraseña |
+|-----|-------|------------|
+| Administrador | `admin@optirutas.com` | `Admin123!` |
+| Planificador | `planificador@optirutas.com` | `Planif123!` |
+| Conductor | `conductor@optirutas.com` | `Conduc123!` |
+| Gerente | `gerente@optirutas.com` | `Gerente123!` |
+
 ## Estructura del proyecto
 
 ```

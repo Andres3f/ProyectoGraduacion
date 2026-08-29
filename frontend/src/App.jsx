@@ -12,6 +12,7 @@ import MyRoutePage from './pages/MyRoutePage';
 import VehiclesPage from './pages/VehiclesPage';
 import ClientsPage from './pages/ClientsPage';
 import ReportsPage from './pages/ReportsPage';
+import ManagerDashboardPage from './pages/ManagerDashboardPage';
 
 function App() {
   const { user } = useAuth();
@@ -37,6 +38,9 @@ function App() {
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/clients" element={<ClientsPage />} />
             <Route path="/reports" element={<ReportsPage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={['gerente', 'admin']} />}>
+            <Route path="/dashboard-gerente" element={<ManagerDashboardPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
