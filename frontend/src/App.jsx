@@ -8,6 +8,7 @@ import OrdersPage from './pages/OrdersPage';
 import RoutesPage from './pages/RoutesPage';
 import MapPage from './pages/MapPage';
 import AddUserPage from './pages/AddUserPage';
+import PlaceholderPage from './pages/PlaceholderPage';
 
 function App() {
   const { user } = useAuth();
@@ -27,6 +28,10 @@ function App() {
             <Route path="/routes" element={<RoutesPage />} />
             <Route path="/map" element={<MapPage />} />
             <Route path="/users/new" element={<AddUserPage />} />
+            <Route path="/vehicles" element={<PlaceholderPage title="Vehículos" />} />
+            <Route path="/clients" element={<PlaceholderPage title="Clientes" />} />
+            <Route path="/my-route" element={<PlaceholderPage title="Mi Ruta" />} />
+            <Route path="/dashboard-gerente" element={<PlaceholderPage title="KPIs gerente" />} />
           </Route>
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

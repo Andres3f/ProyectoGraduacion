@@ -1,16 +1,32 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const links = [
-  { to: '/', label: 'Dashboard' },
-  { to: '/orders', label: 'Pedidos' },
-  { to: '/routes', label: 'Rutas' },
-  { to: '/map', label: 'Mapa' },
-];
+const MENU_BY_ROLE = {
+  admin: [
+    { to: '/', label: 'Dashboard' },
+    { to: '/orders', label: 'Pedidos' },
+    { to: '/vehicles', label: 'Vehículos' },
+    { to: '/clients', label: 'Clientes' },
+    { to: '/users/new', label: 'Usuarios' },
+  ],
+  planificador: [
+    { to: '/', label: 'Dashboard' },
+    { to: '/orders', label: 'Pedidos' },
+    { to: '/routes', label: 'Rutas' },
+    { to: '/map', label: 'Mapa' },
+  ],
+  conductor: [
+    { to: '/my-route', label: 'Mi Ruta' },
+  ],
+  gerente: [
+    { to: '/dashboard-gerente', label: 'KPIs' },
+  ],
+};
 
 export default function Navbar() {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
+  const links = MENU_BY_ROLE[user?.role] || [];
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 backdrop-blur border-b border-gray-200 shadow-sm">
