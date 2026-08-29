@@ -17,6 +17,24 @@ class Settings(BaseSettings):
     APP_NAME: str = "Optirutas Jalapa"
     DEBUG: bool = True
 
+    # ── Optimizador / geografía (Sprint 3) ─────────────────────
+    # Depósito base (centro de Jalapa, GT).
+    DEPOT_LAT: float = 14.6347
+    DEPOT_LNG: float = -89.9889
+    # Velocidad promedio urbana (km/h) usada para estimar tiempos de viaje
+    # a partir de la distancia.
+    AVERAGE_SPEED_KMH: float = 30.0
+    # Factor de corrección de caminos: multiplica la distancia en línea
+    # recta (Haversine) para aproximar la distancia real por calle.
+    ROAD_DISTANCE_FACTOR: float = 1.3
+    # Tiempo máximo de trabajo por vehículo al día (minutos).
+    MAX_TIME_PER_VEHICLE_MIN: int = 24 * 60
+    # Hora de salida nominal del depósito (HH:MM local). Se usa para
+    # estimar ETA de cada parada.
+    DEPOT_DEPARTURE: str = "08:00"
+    # Costo por kilómetro recorrido (GTQ) para métricas de ahorro.
+    COST_PER_KM_GTQ: float = 12.0
+
     class Config:
         env_file = ".env"
         extra = "ignore"

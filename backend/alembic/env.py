@@ -11,7 +11,7 @@ load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 # Importar modelos para que Alembic los detecte
 from app.database import Base
 from app.config import settings
-from app.models import user, order, vehicle, route, client  # noqa: F401
+from app.models import user, order, vehicle, route, route_stop, client  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

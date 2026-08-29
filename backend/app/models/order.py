@@ -34,6 +34,12 @@ class Order(Base):
     status = Column(
         Enum(OrderStatus), nullable=False, default=OrderStatus.pendiente
     )
+    # Ventana de tiempo de entrega deseada, en minutos desde las 00:00.
+    # Ej. 540 = 09:00, 720 = 12:00. Nullable = sin restricción de horario.
+    time_window_start = Column(Integer, nullable=True)
+    time_window_end = Column(Integer, nullable=True)
+    # Tiempo estimado de servicio en la entrega (minutos).
+    service_time_min = Column(Integer, nullable=True, default=15)
     notes = Column(String(1000), nullable=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

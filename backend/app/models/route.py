@@ -3,6 +3,7 @@ import enum
 from sqlalchemy import (
     Column, Integer, String, Float, Enum, DateTime, ForeignKey, JSON, func,
 )
+from sqlalchemy.orm import relationship
 from app.database import Base
 
 
@@ -20,7 +21,10 @@ class Route(Base):
     name = Column(String(255), nullable=True)
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    stops = Column(JSON, nullable=True)  # Lista ordenada de order_ids
+    # Snapshot JSON de las paradas (orden de order_ids). Se conserva un sprint
+    # más por compatibilidad con el frontend viejo; se eliminará en Sprint 4
+    # cuando el frontend lea exclusivamente de la relación `stops`.
+    stops_snapshot = Column("stops", JSON, nullable=True)
     total_distance_km = Column(Float, nullable=True)
     total_duration_min = Column(Float, nullable=True)
     total_weight_kg = Column(Float, nullable=True)
@@ -31,4 +35,10 @@ class Route(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Paradas relacionadas (tabla route_stops), ordenadas por secuencia.
+    # `RouteOut.stops` se puebla desde aquí (no desde el JSON).
+    stops = relationship(
+        "RouteStop", order_by="RouteStop.sequence", cascade="all, delete-orphan"
     )

@@ -117,6 +117,53 @@ optirutas-jalapa/
 └── .gitignore
 ```
 
+## Optimización de rutas (Sprint 3)
+
+El motor de optimización (`backend/app/services/optimizer.py`) resuelve un
+**VRP con capacidad y ventanas de tiempo** (CVRP + Time Windows) usando
+Google OR-Tools. A diferencia del TSP de un solo vehículo original, ahora:
+
+- Se asignan pedidos a **varios vehículos** respetando la capacidad en kg.
+- Se respetan las **ventanas de tiempo** de entrega de cada pedido.
+- Si un pedido no cabe por capacidad u horario, **no rompe la ruta**: se
+  devuelve en `unassigned_order_ids` para que el usuario vea qué falló
+  (respuesta HTTP 200, no un 500).
+
+### Decisión técnica: OSRM vs Haversine corregido
+
+Para calcular distancias se usa **distancia Haversine (línea recta)
+multiplicada por un factor de corrección de calles** (por defecto `× 1.3`),
+configurable vía `ROAD_DISTANCE_FACTOR`. Se eligió esta opción por:
+
+- **Simplicidad de despliegue**: no requiere levantar un servidor OSRM.
+- **Alcance de tesis**: es suficiente y defendible para zonas urbanas.
+- **Determinismo**: reproducible en pruebas sin dependencia de red.
+
+Si en el futuro se requiere precisión por calles, se puede migrar a un
+contenedor OSRM propio con el mapa de Guatemala y sustituir
+`_build_distance_matrix`. La configuración relacionada vive en
+`app/config.py` (velocidad promedio, hora de salida, costo por km, etc.).
+
+### Endpoint de optimización
+
+Se mantiene **`POST /api/routes/optimize`** (más RESTful que `/api/optimize`).
+Solicitud:
+
+```json
+{ "order_ids": [1, 2, 3], "vehicle_ids": [1, 2] }
+```
+
+Respuesta: lista de rutas (una por vehículo usado), `unassigned_order_ids`,
+`success`, `message` y `metrics` (distancias antes/después, % de reducción y
+ahorro estimado de combustible).
+
+### Persistencia de paradas
+
+Las paradas se persisten en la tabla **`route_stops`** (una fila por parada
+en una ruta), consultables desde la relación `Route.stops`. La columna
+`routes.stops` (JSON) se conserva como *snapshot* por compatibilidad con el
+frontend antiguo y se eliminará en Sprint 4.
+
 ## Autenticación y Roles (RBAC)
 
 | Rol | Descripción | Permisos principales |

@@ -8,6 +8,9 @@ class OrderCreate(BaseModel):
     client_id: int
     weight_kg: float = Field(0, ge=0)
     volume_m3: float = Field(0, ge=0)
+    time_window_start: Optional[int] = None
+    time_window_end: Optional[int] = None
+    service_time_min: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -31,6 +34,9 @@ class OrderOut(BaseModel):
     weight_kg: float
     volume_m3: float
     status: OrderStatus
+    time_window_start: Optional[int]
+    time_window_end: Optional[int]
+    service_time_min: Optional[int]
     notes: Optional[str]
     created_at: datetime
 
