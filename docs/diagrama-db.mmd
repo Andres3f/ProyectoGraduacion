@@ -1,0 +1,76 @@
+---
+title: "OptiRutas Jalapa - Diagrama de Base de Datos (PostgreSQL + PostGIS)"
+---
+erDiagram
+    USERS ||--o{ ORDERS : "created_by"
+    USERS ||--o{ VEHICLES : "driver_id"
+    USERS ||--o{ ROUTES : "driver_id"
+    VEHICLES ||--o{ ROUTES : "vehicle_id"
+    CLIENTS ||--o{ ORDERS : ""
+
+    USERS {
+        int id PK
+        varchar(255) email UK
+        varchar(255) full_name
+        varchar(255) hashed_password
+        role_enum role
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+    }
+
+    CLIENTS {
+        int id PK
+        varchar(255) name
+        varchar(500) address
+        varchar(100) zone
+        float latitude
+        float longitude
+        geography(Point,4326) geom
+        datetime created_at
+        datetime updated_at
+    }
+
+    ORDERS {
+        int id PK
+        int client_id FK
+        varchar(255) client_name
+        varchar(500) address
+        float latitude
+        float longitude
+        geography(Point,4326) geom
+        float weight_kg
+        float volume_m3
+        order_status_enum status
+        varchar(1000) notes
+        int created_by FK
+        datetime created_at
+        datetime updated_at
+    }
+
+    VEHICLES {
+        int id PK
+        varchar(20) plate UK
+        varchar(255) description
+        float capacity_kg
+        float capacity_m3
+        int driver_id FK
+        vehicle_status_enum status
+        boolean is_active
+        datetime created_at
+    }
+
+    ROUTES {
+        int id PK
+        varchar(255) name
+        int vehicle_id FK
+        int driver_id FK
+        json stops
+        float total_distance_km
+        float total_duration_min
+        float total_weight_kg
+        route_status_enum status
+        datetime optimized_at
+        datetime created_at
+        datetime updated_at
+    }
