@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # Costo por kilómetro recorrido (GTQ) para métricas de ahorro.
     COST_PER_KM_GTQ: float = 12.0
 
+    # ── Ahorro estimado (PG-22) ────────────────────────────────
+    # Parámetros para estimar el ahorro de combustible y costo operativo.
+    FUEL_CONSUMPTION_KM_PER_LITER: float = 8.0  # rendimiento promedio del camión
+    FUEL_PRICE_GTQ_PER_LITER: float = 28.0
+    DRIVER_COST_GTQ_PER_HOUR: float = 35.0
+
     class Config:
         env_file = ".env"
         extra = "ignore"

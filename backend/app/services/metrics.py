@@ -40,6 +40,33 @@ def _total_distance_in_order(stops: List) -> float:
     return total * settings.ROAD_DISTANCE_FACTOR
 
 
+def estimate_savings(distance_saved_km: float, time_saved_min: float = 0) -> dict:
+    """Estima el ahorro de combustible y de costo operativo (PG-22).
+
+    Args:
+        distance_saved_km: kilómetros evitados por la optimización.
+        time_saved_min: minutos de tiempo de conductor ahorrados.
+
+    Returns:
+        dict con fuel_liters_saved, fuel_cost_saved_gtq y
+        operational_cost_saved_gtq (combustible + mano de obra).
+    """
+    if distance_saved_km <= 0:
+        return {
+            "fuel_liters_saved": 0.0,
+            "fuel_cost_saved_gtq": 0.0,
+            "operational_cost_saved_gtq": 0.0,
+        }
+    liters_saved = distance_saved_km / settings.FUEL_CONSUMPTION_KM_PER_LITER
+    fuel_cost_saved = liters_saved * settings.FUEL_PRICE_GTQ_PER_LITER
+    driver_cost_saved = (time_saved_min / 60) * settings.DRIVER_COST_GTQ_PER_HOUR
+    return {
+        "fuel_liters_saved": round(liters_saved, 1),
+        "fuel_cost_saved_gtq": round(fuel_cost_saved, 2),
+        "operational_cost_saved_gtq": round(fuel_cost_saved + driver_cost_saved, 2),
+    }
+
+
 def compare_before_after(orders: List, optimized_stops) -> dict:
     """Calcula las métricas antes/después de la optimización.
 

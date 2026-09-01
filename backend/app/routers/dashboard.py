@@ -11,7 +11,7 @@ from app.models.route_stop import RouteStop
 from app.models.order import Order
 from app.models.user import User, RoleEnum
 from app.auth.dependencies import require_role
-from app.services.metrics import compare_before_after
+from app.services.metrics import compare_before_after, estimate_savings
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard / KPIs"])
 
@@ -50,9 +50,27 @@ def _build_report(db: Session, date_from: date, date_to: date) -> dict:
         "avg_km_per_route": round(total_km / len(routes), 2) if routes else 0,
     }
 
+    # PG-22: ahorro estimado de combustible y de costo operativo. La distancia
+    # ahorrada es la suma (por ruta) de distancia antes - después.
+    routes_rows = [_route_dashboard_row(db, r) for r in routes]
+    total_km_saved = sum(
+        max(0, row.get("distance_before_km", 0) - row.get("distance_after_km", 0))
+        for row in routes_rows
+    )
+    savings = estimate_savings(total_km_saved)
+    kpis.update(savings)
+
+    # PG-23: distribución de entregas (entregado / fallido / pendiente).
+    stop_status_counts = {
+        "entregado": len([s for s in stops if s.status == "entregado"]),
+        "fallido": len([s for s in stops if s.status == "fallido"]),
+        "pendiente": len([s for s in stops if s.status == "pendiente"]),
+    }
+    kpis["delivery_distribution"] = stop_status_counts
+
     return {
         "kpis": kpis,
-        "routes": [_route_dashboard_row(db, r) for r in routes],
+        "routes": routes_rows,
     }
 
 
@@ -74,6 +92,7 @@ def _route_dashboard_row(db: Session, r: Route) -> dict:
         "distance_km": r.total_distance_km or 0,
         "stops": len(r.stops or []),
         "optimized_at": r.optimized_at,
+        "created_at": r.created_at,
     }
     if optimized:
         orders_naive = (
@@ -101,6 +120,49 @@ def get_kpis(
 ):
     """Indicadores clave del negocio en un rango de fechas (OPT-22)."""
     return _build_report(db, date_from, date_to)["kpis"]
+
+
+@router.get("/kpis/timeseries")
+def get_kpis_timeseries(
+    date_from: date = Query(..., description="Fecha inicial (YYYY-MM-DD)"),
+    date_to: date = Query(..., description="Fecha final (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role([RoleEnum.gerente, RoleEnum.admin])),
+):
+    """Devuelve un punto por día con % de reducción y km ahorrados (PG-23).
+
+    Punto de datos para el gráfico de línea de evolución de la reducción.
+    """
+    routes_rows = _build_report(db, date_from, date_to)["routes"]
+
+    per_day: dict[date, dict] = {}
+    for r in routes_rows:
+        day = r["created_at"].date() if r.get("created_at") else None
+        if day is None:
+            continue
+        entry = per_day.setdefault(
+            day, {"before": 0.0, "after": 0.0, "km_saved": 0.0}
+        )
+        before = r.get("distance_before_km", 0)
+        after = r.get("distance_after_km", 0)
+        entry["before"] += before
+        entry["after"] += after
+        entry["km_saved"] += max(0, before - after)
+
+    series = []
+    for day in sorted(per_day):
+        e = per_day[day]
+        reduction = (
+            round((1 - e["after"] / e["before"]) * 100, 1) if e["before"] else 0
+        )
+        series.append({
+            "date": day.isoformat(),
+            "reduction_percentage": reduction,
+            "km_saved": round(e["km_saved"], 2),
+            "routes": sum(1 for r in routes_rows if r.get("created_at") and r["created_at"].date() == day),
+        })
+
+    return {"dates": [s["date"] for s in series], "series": series}
 
 
 @router.get("/export")

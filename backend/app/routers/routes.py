@@ -178,9 +178,13 @@ def create_optimized_route(
 def get_route(
     route_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     route = db.query(Route).filter(Route.id == route_id).first()
     if not route:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    # PG-18: un conductor solo puede ver sus propias rutas. Se devuelve 404
+    # (y no 403) para no confirmar la existencia de rutas ajenas.
+    if current_user.role == RoleEnum.conductor and route.driver_id != current_user.id:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
     return route

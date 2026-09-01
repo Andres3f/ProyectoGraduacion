@@ -4,15 +4,28 @@ import {
   CategoryScale,
   LinearScale,
   BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
   Title,
   Tooltip,
   Legend,
 } from 'chart.js';
-import { Bar } from 'react-chartjs-2';
+import { Bar, Line, Pie } from 'react-chartjs-2';
 import StatCard from '../components/StatCard';
 import api from '../services/api';
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+);
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -35,6 +48,7 @@ export default function ManagerDashboardPage() {
   const [dateTo, setDateTo] = useState(todayStr());
   const [kpis, setKpis] = useState(null);
   const [routes, setRoutes] = useState([]);
+  const [timeseries, setTimeseries] = useState({ dates: [], series: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -54,6 +68,13 @@ export default function ManagerDashboardPage() {
               return d >= dateFrom && d <= dateTo;
             })))
           .catch(() => setRoutes([]));
+        // Serie temporal para el gráfico de línea de evolución de reducción.
+        api
+          .get('/dashboard/kpis/timeseries', {
+            params: { date_from: dateFrom, date_to: dateTo },
+          })
+          .then((t) => setTimeseries(t.data))
+          .catch(() => setTimeseries({ dates: [], series: [] }));
       })
       .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setLoading(false));
@@ -98,6 +119,47 @@ export default function ManagerDashboardPage() {
       ],
     };
   }, [routes]);
+
+  const lineChartData = useMemo(() => {
+    const dates = timeseries.dates || [];
+    const reductionPcts = (timeseries.series || []).map(
+      (s) => s.reduction_percentage ?? 0,
+    );
+    return {
+      labels: dates,
+      datasets: [
+        {
+          label: '% de reducción',
+          data: reductionPcts,
+          borderColor: 'rgba(22, 163, 74, 1)',
+          backgroundColor: 'rgba(22, 163, 74, 0.15)',
+          fill: true,
+          tension: 0.3,
+        },
+      ],
+    };
+  }, [timeseries]);
+
+  const pieChartData = useMemo(() => {
+    const dist = kpis?.delivery_distribution ?? {
+      entregado: 0,
+      fallido: 0,
+      pendiente: 0,
+    };
+    return {
+      labels: ['Entregado', 'Fallido', 'Pendiente'],
+      datasets: [
+        {
+          data: [dist.entregado ?? 0, dist.fallido ?? 0, dist.pendiente ?? 0],
+          backgroundColor: [
+            'rgba(22, 163, 74, 0.8)',
+            'rgba(239, 68, 68, 0.8)',
+            'rgba(234, 179, 8, 0.8)',
+          ],
+        },
+      ],
+    };
+  }, [kpis]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -180,6 +242,24 @@ export default function ManagerDashboardPage() {
             />
           </div>
 
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+            <StatCard
+              label="Combustible ahorrado (l)"
+              value={kpis?.fuel_liters_saved ?? 0}
+              icon="⛽"
+            />
+            <StatCard
+              label="Costo combustible ahorrado (Q)"
+              value={kpis ? `Q${kpis.fuel_cost_saved_gtq}` : 'Q0'}
+              icon="💰"
+            />
+            <StatCard
+              label="Costo operativo ahorrado (Q)"
+              value={kpis ? `Q${kpis.operational_cost_saved_gtq}` : 'Q0'}
+              icon="🏦"
+            />
+          </div>
+
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Distancia antes vs después por ruta (km)
@@ -200,6 +280,50 @@ export default function ManagerDashboardPage() {
                 }}
               />
             )}
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6 mt-6">
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Evolución de la reducción (%)
+              </h2>
+              {timeseries.dates.length === 0 ? (
+                <p className="text-gray-400 text-sm">
+                  No hay datos en el rango seleccionado
+                </p>
+              ) : (
+                <Line
+                  data={lineChartData}
+                  options={{
+                    responsive: true,
+                    plugins: { legend: { position: 'top' } },
+                    scales: { y: { beginAtZero: true } },
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                Distribución de entregas
+              </h2>
+              {(kpis?.delivery_distribution?.entregado ?? 0) +
+                (kpis?.delivery_distribution?.fallido ?? 0) +
+                (kpis?.delivery_distribution?.pendiente ?? 0) ===
+              0 ? (
+                <p className="text-gray-400 text-sm">
+                  No hay paradas en el rango seleccionado
+                </p>
+              ) : (
+                <Pie
+                  data={pieChartData}
+                  options={{
+                    responsive: true,
+                    plugins: { legend: { position: 'bottom' } },
+                  }}
+                />
+              )}
+            </div>
           </div>
         </>
       )}
