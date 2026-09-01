@@ -132,6 +132,24 @@ def test_conductor_sees_only_own_route(client, admin_headers):
     assert r1.json()["id"] != r2.json()["id"]
 
 
+def test_conductor_cannot_view_other_route_by_id(client, admin_headers):
+    """Un conductor no puede leer GET /api/routes/{id} de otro conductor."""
+    d1, h1 = _create_conductor(client, admin_headers, "leakA")
+    d2, h2 = _create_conductor(client, admin_headers, "leakB")
+
+    v1, o1, o2 = _full_setup(client, admin_headers, d1, "leakA")
+    body = _optimize(client, admin_headers, [o1, o2], v1)
+    route_id = body["routes"][0]["id"]
+
+    resp = client.get(f"/api/routes/{route_id}", headers=h2)
+    assert resp.status_code == 404
+
+    # El conductor dueño sí puede verla.
+    own = client.get(f"/api/routes/{route_id}", headers=h1)
+    assert own.status_code == 200
+    assert own.json()["id"] == route_id
+
+
 def test_conductor_cannot_mark_other_driver_stop(client, admin_headers):
     """Un conductor no puede marcar paradas de la ruta de otro (404)."""
     d1, h1 = _create_conductor(client, admin_headers, "marc1")
@@ -150,6 +168,40 @@ def test_conductor_cannot_mark_other_driver_stop(client, admin_headers):
         headers=h2,
     )
     assert resp.status_code == 404
+
+
+def test_admin_roles_can_view_any_route_by_id(client, admin_headers):
+    """Admin, planificador y gerente pueden ver cualquier ruta por ID."""
+    d1, _ = _create_conductor(client, admin_headers, "adminview")
+    v1, o1, o2 = _full_setup(client, admin_headers, d1, "adminview")
+    body = _optimize(client, admin_headers, [o1, o2], v1)
+    route_id = body["routes"][0]["id"]
+
+    # Admin.
+    resp = client.get(f"/api/routes/{route_id}", headers=admin_headers)
+    assert resp.status_code == 200
+
+    # Planificador.
+    resp = client.post(
+        "/api/users/",
+        json={
+            "email": "plan.adminview@optirutas.com",
+            "full_name": "Plan AdminView",
+            "password": "Passw0rd!",
+            "role": "planificador",
+        },
+        headers=admin_headers,
+    )
+    assert resp.status_code == 201
+    plan_headers = _auth(client, "plan.adminview@optirutas.com")
+    resp = client.get(f"/api/routes/{route_id}", headers=plan_headers)
+    assert resp.status_code == 200
+
+
+def _auth(client, email):
+    login = client.post("/api/auth/login", json={"email": email, "password": "Passw0rd!"})
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 def test_invalid_stop_status_400(client, admin_headers):

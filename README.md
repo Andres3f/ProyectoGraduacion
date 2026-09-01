@@ -42,21 +42,31 @@ docker compose up --build
 # API Health: http://localhost:8000/health
 ```
 
-### Opción 2: Desarrollo local
+### Opción 2: Desarrollo local (BD local por defecto)
+
+Usa el PostgreSQL instalado en tu sistema (no Docker). El archivo
+`backend/.env` ya apunta a `localhost`:
 
 ```bash
-# Backend
+# 1. Preparar la base de datos local (solo la primera vez)
+sudo -u postgres psql -c "CREATE USER optirutas WITH PASSWORD 'optirutas_secret' CREATEDB;"
+sudo -u postgres psql -c "CREATE DATABASE optirutas_jalapa OWNER optirutas;"
+
+# 2. Backend
 cd backend
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Frontend (en otra terminal)
+# 3. Frontend (en otra terminal)
 cd frontend
 npm install
 npm run dev
 ```
+
+Al arrancar, el backend crea automáticamente las tablas y el usuario
+`admin`. No es necesario levantar el contenedor `db` de Docker.
 
 ## Datos de demostración (seed)
 
@@ -188,6 +198,38 @@ en una ruta), consultables desde la relación `Route.stops`. La columna
 `routes.stops` (JSON) se conserva como *snapshot* por compatibilidad con el
 frontend antiguo y se eliminará en Sprint 4.
 
+### Rendimiento del solver (PG-25)
+
+El objetivo del criterio de aceptación es **resolver 50 pedidos en menos de
+5 segundos**. Se mide el tiempo real del endpoint `POST /api/routes/optimize`
+(incluyendo latencia HTTP y persistencia en BD), no solo el `time_limit` interno.
+
+Configuración del solver (`backend/app/services/optimizer.py`):
+
+- `search_parameters.first_solution_strategy = PATH_CHEAPEST_ARC`
+- `search_parameters.time_limit.seconds = 10` (límite superior de seguridad,
+  se alcanza raramente en las cargas típicas)
+
+**Mediciones reales** (pruebas marcadas `@pytest.mark.performance` en
+`backend/tests/test_performance.py`, excluidas de la corrida normal de CI):
+
+| Escenario | Pedidos | Vehículos | Tiempo real | ¿Objetivo <5s? |
+|-----------|---------|-----------|-------------|----------------|
+| Carga pequeña | 50 | 5 | ~0.2 s | ✅ |
+| Carga grande | 100 | 10 | ~1.0 s | ✅ |
+
+Para reproducirlas localmente:
+
+```bash
+cd backend && source venv/bin/activate
+pytest tests/test_performance.py -m performance -v
+```
+
+Hardware / entorno donde se midieron: desarrollo local, Python 3.12, sin
+limitaciones de contenedor. Los tiempos pueden variar según la máquina; el
+`time_limit.seconds = 10` actúa como tope de seguridad para la búsqueda de
+mejora.
+
 ## Autenticación y Roles (RBAC)
 
 | Rol | Descripción | Permisos principales |
@@ -250,41 +292,45 @@ frontend antiguo y se eliminará en Sprint 4.
 Copiar `.env.example` a `.env` y configurar:
 
 ```env
-# Database
-DATABASE_URL=postgresql://user:password@postgres:5432/optirutas
+# Base de datos
+POSTGRES_USER=optirutas
+POSTGRES_PASSWORD=optirutas_secret
+POSTGRES_DB=optirutas_jalapa
+POSTGRES_HOST=localhost     # "db" dentro de Docker
+POSTGRES_PORT=5432
 
-# JWT
-SECRET_KEY=your-secret-key-here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
+# Incluye la config de la BD: apunta a "db" (Docker) o "localhost" (local)
+DATABASE_URL=postgresql+psycopg2://optirutas:optirutas_secret@localhost:5432/optirutas_jalapa
+DATABASE_URL_LOCAL=postgresql+psycopg2://optirutas:optirutas_secret@localhost:5432/optirutas_jalapa
 
-# Backend
-DEBUG=False
-BACKEND_URL=http://localhost:8000
+# Seguridad JWT
+JWT_SECRET_KEY=supersecretkey_jalapa_2026_cambiar_esto_en_produccion
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
 
-# Frontend
-VITE_API_BASE_URL=http://localhost:8000/api
-
-# Google OR-Tools
-SOLVER_TIME_LIMIT=30
-
-# Email (opcional)
-SMTP_SERVER=smtp.gmail.com
-SMTP_PORT=587
-SENDER_EMAIL=your-email@gmail.com
-SENDER_PASSWORD=your-password
+# Otras configuraciones
+ENVIRONMENT=development
+DEBUG=true
+GOOGLE_MAPS_API_KEY=
 ```
+
+> **Nota**: el backend lee `backend/.env` (usado en desarrollo local y por
+> Alembic vía `DATABASE_URL_LOCAL`). El `.env` de la raíz se usa para Docker.
+> En desarrollo local asegúrate de que `backend/.env` tenga `POSTGRES_HOST=localhost`.
 
 ## Testing
 
 ```bash
-# Backend
+# Backend (los tests de rendimiento están excluidos por defecto)
 cd backend
 pytest
 
 # Frontend
 cd frontend
 npm run test
+
+# Tests de rendimiento del solver opcionalmente
+cd backend && pytest tests/test_performance.py -m performance -v
 ```
 
 ## Troubleshooting
