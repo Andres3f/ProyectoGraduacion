@@ -86,3 +86,32 @@ def test_deactivate_user_soft_delete(client, admin_headers):
 def test_cannot_deactivate_self(client, admin_headers):
     resp = client.delete("/api/users/1", headers=admin_headers)
     assert resp.status_code == 400
+
+
+def test_patch_user_status_deactivates_and_reactivates(client, admin_headers):
+    created = _create_user(
+        client, admin_headers, email="parch@optirutas.com"
+    ).json()
+    uid = created["id"]
+    # Desactivar
+    resp = client.patch(
+        f"/api/users/{uid}/status", json={"is_active": False}, headers=admin_headers
+    )
+    assert resp.status_code == 200
+    assert resp.json()["is_active"] is False
+    # Reactivar
+    resp2 = client.patch(
+        f"/api/users/{uid}/status", json={"is_active": True}, headers=admin_headers
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["is_active"] is True
+    # Mismo estado → 400
+    resp3 = client.patch(
+        f"/api/users/{uid}/status", json={"is_active": True}, headers=admin_headers
+    )
+    assert resp3.status_code == 400
+
+
+def test_patch_user_status_forbidden_for_non_admin(client, regular_user_headers):
+    resp = client.patch("/api/users/2/status", json={"is_active": False}, headers=regular_user_headers)
+    assert resp.status_code == 403

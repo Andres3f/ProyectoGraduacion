@@ -137,6 +137,13 @@ async def upload_orders(
     # Transacción atómica: todo o nada
     db.add_all(valid_orders)
     db.commit()
+    from app.services.audit import log_action
+
+    log_action(
+        db, current_user.id, "carga_masiva_pedidos",
+        entidad="order", detalle={"creados": len(valid_orders), "errores": len(errors)},
+    )
+    db.commit()
     return {"created": len(valid_orders)}
 
 

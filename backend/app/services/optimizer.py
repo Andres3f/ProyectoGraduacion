@@ -13,12 +13,16 @@ tesis esto es suficiente y mucho más simple de desplegar.
 """
 
 import math
+import logging
 from datetime import datetime, date, timedelta
 from typing import List
 
 from ortools.constraint_solver import routing_enums_pb2, pywrapcp
 
 from app.config import settings
+from app.services.ors_client import get_distance_duration_matrix, ORSError
+
+logger = logging.getLogger(__name__)
 
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -119,8 +123,18 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         {"lat": o.latitude, "lng": o.longitude} for o in orders
     ]
 
-    distance_matrix = _build_distance_matrix(locations)  # metros
-    time_matrix = _build_time_matrix(distance_matrix)  # minutos
+    # ── Matriz de distancias/tiempos ────────────────────────────
+    # Se intenta OpenRouteService (distancias reales por carretera); si falla
+    # o no hay API key, se usa Haversine como fallback exactamente como antes.
+    try:
+        distance_matrix, duration_matrix_sec = get_distance_duration_matrix(locations)
+        time_matrix = [[max(1, round(d / 60)) for d in row] for row in duration_matrix_sec]
+        matrix_source = "ors"
+    except ORSError as e:
+        logger.warning("ORS no disponible (%s), usando Haversine como fallback.", e)
+        distance_matrix = _build_distance_matrix(locations)
+        time_matrix = _build_time_matrix(distance_matrix)
+        matrix_source = "haversine"
 
     vehicle_capacities = [
         int(v.capacity_kg) if v.capacity_kg else 0 for v in vehicles
@@ -274,4 +288,5 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         "message": None,
         "routes": routes,
         "unassigned_order_ids": unassigned,
+        "matrix_source": matrix_source,
     }

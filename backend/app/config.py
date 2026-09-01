@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     FUEL_PRICE_GTQ_PER_LITER: float = 28.0
     DRIVER_COST_GTQ_PER_HOUR: float = 35.0
 
+    # ── OpenRouteService (opcional) ─────────────────────────────
+    # Si ORS_API_KEY está vacío, el sistema usa Haversine automáticamente.
+    ORS_API_KEY: str = ""
+    ORS_BASE_URL: str = "https://api.openrouteservice.org"
+    ORS_PROFILE: str = "driving-hgv"  # vehículo pesado (camión)
+    ORS_TIMEOUT_SECONDS: float = 8.0
+
     class Config:
         env_file = ".env"
         extra = "ignore"

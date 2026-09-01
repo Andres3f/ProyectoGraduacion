@@ -88,7 +88,7 @@ def _load_vehicles(db: Session, vehicle_ids: List[int]) -> List[Vehicle]:
 def create_optimized_route(
     req: OptimizeRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(
+    current_user: User = Depends(
         require_role([RoleEnum.admin, RoleEnum.planificador])
     ),
 ):
@@ -133,6 +133,7 @@ def create_optimized_route(
             stops_snapshot=_json_safe_stops(route_data["stops"]),
             total_distance_km=route_data["total_distance_km"],
             total_weight_kg=route_data["total_weight_kg"],
+            distance_source=result.get("matrix_source", "haversine"),
             status=RouteStatus.planificada,
             optimized_at=None,
         )
@@ -157,6 +158,16 @@ def create_optimized_route(
         {Order.status: OrderStatus.en_ruta}, synchronize_session=False
     )
 
+    from app.services.audit import log_action
+
+    log_action(
+        db, current_user.id, "optimizar_rutas",
+        entidad="route", detalle={
+            "routes_creadas": len(created_routes),
+            "unassigned": len(result["unassigned_order_ids"]),
+            "matrix_source": result.get("matrix_source", "haversine"),
+        },
+    )
     db.commit()
     for route in created_routes:
         db.refresh(route)
@@ -171,6 +182,7 @@ def create_optimized_route(
         routes=created_routes,
         unassigned_order_ids=list(result["unassigned_order_ids"]),
         metrics=metrics,
+        matrix_source=result.get("matrix_source", "haversine"),
     )
 
 

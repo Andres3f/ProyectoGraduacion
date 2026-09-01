@@ -28,6 +28,9 @@ class Route(Base):
     total_distance_km = Column(Float, nullable=True)
     total_duration_min = Column(Float, nullable=True)
     total_weight_kg = Column(Float, nullable=True)
+    # Fuente de las distancias de la ruta: "ors" (distancias reales por
+    # carretera) o "haversine" (estimación en línea recta corregida).
+    distance_source = Column(String(20), nullable=True, default="haversine")
     status = Column(
         Enum(RouteStatus), nullable=False, default=RouteStatus.planificada
     )

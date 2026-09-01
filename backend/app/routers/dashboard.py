@@ -171,7 +171,7 @@ def export_report(
     date_from: date = Query(..., description="Fecha inicial (YYYY-MM-DD)"),
     date_to: date = Query(..., description="Fecha final (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    _: User = Depends(require_role([RoleEnum.gerente, RoleEnum.admin])),
+    current_user: User = Depends(require_role([RoleEnum.gerente, RoleEnum.admin])),
 ):
     """Descarga un reporte del rango (KPIs + tabla de rutas) (OPT-23)."""
     data = _build_report(db, date_from, date_to)
@@ -184,6 +184,14 @@ def export_report(
         content, media_type, filename = _build_pdf(kpis, routes, date_from, date_to)
     else:
         raise HTTPException(status_code=400, detail="Formato no soportado (usa xlsx o pdf)")
+
+    from app.services.audit import log_action
+
+    log_action(
+        db, current_user.id, "exportar_reporte",
+        entidad="report", detalle={"format": format, "date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
+    )
+    db.commit()
 
     return Response(
         content=content,
