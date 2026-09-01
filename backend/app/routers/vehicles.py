@@ -38,13 +38,21 @@ def list_vehicles(
 def create_vehicle(
     vehicle_in: VehicleCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role([RoleEnum.admin, RoleEnum.planificador])),
+    current_user: User = Depends(require_role([RoleEnum.admin, RoleEnum.planificador])),
 ):
     _validate_driver(db, vehicle_in.driver_id)
     vehicle = Vehicle(**vehicle_in.model_dump())
     db.add(vehicle)
     db.commit()
     db.refresh(vehicle)
+    from app.services.audit import log_action
+
+    log_action(
+        db, current_user.id, "crear_vehiculo",
+        entidad="vehicle", entidad_id=vehicle.id,
+        detalle={"placa": vehicle.plate},
+    )
+    db.commit()
     return vehicle
 
 
@@ -82,7 +90,7 @@ def update_vehicle(
 def delete_vehicle(
     vehicle_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_role([RoleEnum.admin])),
+    current_user: User = Depends(require_role([RoleEnum.admin])),
 ):
     """Eliminar vehículo (solo admin). Rechaza si tiene rutas asociadas."""
     vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id).first()
@@ -94,6 +102,15 @@ def delete_vehicle(
         raise HTTPException(
             status_code=400, detail="No se puede eliminar: tiene rutas asociadas"
         )
+    placa = vehicle.plate
     db.delete(vehicle)
+    db.commit()
+    from app.services.audit import log_action
+
+    log_action(
+        db, current_user.id, "eliminar_vehiculo",
+        entidad="vehicle", entidad_id=vehicle_id,
+        detalle={"placa": placa},
+    )
     db.commit()
     return {"detail": "Vehículo eliminado"}

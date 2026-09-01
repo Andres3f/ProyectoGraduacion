@@ -1,7 +1,10 @@
 """Tests del motor de optimización VRP (OPT-10)."""
 
+from unittest.mock import patch
+
 from app.services.optimizer import optimize_routes
 from app.services.metrics import compare_before_after
+from app.services.ors_client import ORSError
 
 
 class _Order:
@@ -139,3 +142,53 @@ def test_no_vehicles_returns_error():
     result = optimize_routes(orders, [])
     assert result["success"] is False
     assert result["unassigned_order_ids"] == [1]
+
+
+def test_defaults_to_haversine_when_no_ors_key():
+    # Sin ORS_API_KEY configurada, el optimizer debe usar Haversine sin fallar.
+    orders = _orders(
+        (14.61, -89.98, 500, None, 10),
+        (14.65, -89.99, 500, None, 10),
+    )
+    vehicles = [_Vehicle(1, 1000)]
+    with patch("app.services.optimizer.settings.ORS_API_KEY", ""):
+        result = optimize_routes(orders, vehicles)
+    assert result["success"] is True
+    assert result["matrix_source"] == "haversine"
+
+
+def test_fallback_to_haversine_when_ors_errors():
+    # Si ORS lanza un error, la optimización NO debe romperse: cae a Haversine.
+    orders = _orders(
+        (14.61, -89.98, 500, None, 10),
+        (14.65, -89.99, 500, None, 10),
+    )
+    vehicles = [_Vehicle(1, 1000)]
+    with patch(
+        "app.services.optimizer.get_distance_duration_matrix",
+        side_effect=ORSError("boom"),
+    ):
+        result = optimize_routes(orders, vehicles)
+    assert result["success"] is True
+    assert result["matrix_source"] == "haversine"
+    assert len(result["routes"]) == 1
+
+
+def test_uses_ors_matrix_when_available():
+    # Si ORS responde una matriz, se usa y el fallback no interviene.
+    orders = _orders(
+        (14.61, -89.98, 500, None, 10),
+        (14.65, -89.99, 500, None, 10),
+    )
+    vehicles = [_Vehicle(1, 1000)]
+    n = len(orders) + 1  # depósito + pedidos
+    # Distancias/duración triviales: todo a 0 metros (no afecta la factibilidad).
+    fake_dist = [[0] * n for _ in range(n)]
+    fake_dur = [[600] * n for _ in range(n)]  # 10 min entre todo
+    with patch(
+        "app.services.optimizer.get_distance_duration_matrix",
+        return_value=(fake_dist, fake_dur),
+    ):
+        result = optimize_routes(orders, vehicles)
+    assert result["success"] is True
+    assert result["matrix_source"] == "ors"

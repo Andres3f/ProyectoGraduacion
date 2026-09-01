@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
 from app.routers import (
-    auth, users, orders, vehicles, routes, route_stops, clients, dashboard,
+    auth, users, orders, vehicles, routes, route_stops, clients, dashboard, audit,
 )
 from app.seed import create_initial_admin
 
@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
     import app.models.route  # noqa: F401
     import app.models.route_stop  # noqa: F401
     import app.models.client  # noqa: F401
+    import app.models.audit_log  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Tablas de la BD creadas / verificadas")
@@ -67,6 +68,7 @@ app.include_router(routes.router)
 app.include_router(route_stops.router)
 app.include_router(clients.router)
 app.include_router(dashboard.router)
+app.include_router(audit.router)
 
 
 @app.get("/health", tags=["Sistema"])

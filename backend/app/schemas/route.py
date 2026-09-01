@@ -37,6 +37,7 @@ class RouteOut(BaseModel):
     total_distance_km: Optional[float]
     total_duration_min: Optional[float]
     total_weight_kg: Optional[float]
+    distance_source: Optional[str] = "haversine"
     status: RouteStatus
     optimized_at: Optional[datetime]
     created_at: datetime
@@ -58,3 +59,4 @@ class OptimizeResponse(BaseModel):
     success: bool
     message: Optional[str] = None
     metrics: Optional[dict] = None
+    matrix_source: Optional[str] = None  # "ors" (distancias reales) | "haversine"

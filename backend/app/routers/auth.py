@@ -62,6 +62,10 @@ def login(form: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cuenta desactivada",
         )
+    from app.services.audit import log_action
+
+    log_action(db, user.id, "login", entidad="user", entidad_id=user.id)
+    db.commit()
     return _token_pair_for(user)
 
 

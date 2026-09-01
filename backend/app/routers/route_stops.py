@@ -60,4 +60,12 @@ def update_stop_status(
         db.add(route)
 
     db.commit()
+    from app.services.audit import log_action
+
+    log_action(
+        db, current_user.id, "marcar_entrega",
+        entidad="route_stop", entidad_id=stop_id,
+        detalle={"status": status},
+    )
+    db.commit()
     return {"detail": "Estado actualizado"}

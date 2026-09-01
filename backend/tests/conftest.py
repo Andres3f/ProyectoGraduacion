@@ -28,6 +28,7 @@ import app.models.order  # noqa: E402,F401
 import app.models.vehicle  # noqa: E402,F401
 import app.models.route  # noqa: E402,F401
 import app.models.route_stop  # noqa: E402,F401
+import app.models.audit_log  # noqa: E402,F401
 
 from app.main import app  # noqa: E402
 from app.seed import create_initial_admin  # noqa: E402
