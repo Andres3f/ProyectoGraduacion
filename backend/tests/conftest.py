@@ -78,3 +78,32 @@ def regular_user_headers(client):
     )
     assert resp.status_code == 200, resp.text
     return _auth_headers(client, email, "Passw0rd!")
+
+
+def _create_user_with_role(client, admin_headers, email, role):
+    resp = client.post(
+        "/api/users",
+        json={
+            "email": email,
+            "full_name": f"{role.capitalize()} Test",
+            "password": "Passw0rd!",
+            "role": role,
+        },
+        headers=admin_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+@pytest.fixture
+def planner_headers(client, admin_headers):
+    email = "planner.test@optirutas.com"
+    _create_user_with_role(client, admin_headers, email, "planificador")
+    return _auth_headers(client, email, "Passw0rd!")
+
+
+@pytest.fixture
+def conductor_headers(client, admin_headers):
+    email = "driver.test@optirutas.com"
+    _create_user_with_role(client, admin_headers, email, "conductor")
+    return _auth_headers(client, email, "Passw0rd!")

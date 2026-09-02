@@ -19,6 +19,7 @@ def read_current_user(current_user: User = Depends(get_current_user)):
 
 
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def create_user(
     user_in: UserCreate,
     db: Session = Depends(get_db),
@@ -45,11 +46,14 @@ def create_user(
 
 
 @router.get("", response_model=List[UserOut])
+@router.get("/", response_model=List[UserOut], include_in_schema=False)
 def list_users(
     db: Session = Depends(get_db),
-    _: User = Depends(require_role([RoleEnum.admin, RoleEnum.gerente])),
+    _: User = Depends(require_role(
+        [RoleEnum.admin, RoleEnum.gerente, RoleEnum.planificador]
+    )),
 ):
-    """Listar todos los usuarios (solo admin y gerente)."""
+    """Listar todos los usuarios (admin, gerente y planificador)."""
     return db.query(User).all()
 
 

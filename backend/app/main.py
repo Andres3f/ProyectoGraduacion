@@ -2,8 +2,11 @@ import logging
 
 from contextlib import asynccontextmanager
 
+from urllib.parse import urlsplit
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import settings
 from app.database import engine, Base
@@ -42,6 +45,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+class RelativeRedirectMiddleware(BaseHTTPMiddleware):
+    """Convierte el header `Location` de cualquier redirect en una ruta
+    relativa antes de que salga del proceso.
+
+    Sin esto, un 307 de Starlette por trailing slash devuelve una URL
+    absoluta (`http://backend/...`) que el navegador sigue cruzando el proxy
+    del frontend y pierde el header Authorization (bug de cierre de sesión).
+    """
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        location = response.headers.get("location")
+        if location and location.startswith(("http://", "https://")):
+            parsed = urlsplit(location)
+            response.headers["location"] = (
+                parsed.path + (f"?{parsed.query}" if parsed.query else "")
+            )
+        return response
+
 # ── CORS (OPT-20) ─────────────────────────────────────────────
 # Orígenes permitidos desde config/entorno. El backend no usa "*" en
 # producción: cada origen explícito permite credenciales de forma segura.
@@ -57,6 +80,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RelativeRedirectMiddleware)
 
 # ── Routers ───────────────────────────────────────────────────
 app.include_router(auth.router)

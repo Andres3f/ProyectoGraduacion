@@ -15,6 +15,7 @@ export function AuthProvider({ children }) {
         .then((res) => setUser(res.data))
         .catch(() => {
           localStorage.removeItem('token');
+          localStorage.removeItem('refresh_token');
           setUser(null);
         })
         .finally(() => setLoading(false));
@@ -26,6 +27,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
     localStorage.setItem('token', res.data.access_token);
+    localStorage.setItem('refresh_token', res.data.refresh_token);
     const me = await api.get('/users/me');
     setUser(me.data);
     return me.data;
@@ -33,6 +35,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('token');
+    localStorage.removeItem('refresh_token');
     setUser(null);
   };
 

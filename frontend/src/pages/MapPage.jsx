@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import MapView, { ROUTE_COLORS } from '../components/MapView';
+import MapView, { ROUTE_COLORS, RouteStepsPanel } from '../components/MapView';
 
 export default function MapPage() {
   const [routes, setRoutes] = useState([]);
@@ -87,6 +87,7 @@ export default function MapPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className={`${selected ? 'lg:col-span-2' : ''} bg-white rounded-2xl p-4 shadow-sm border border-gray-100`}>
             <MapView routes={enrichedRoutes} onSelectStop={handleSelectStop} />
+            <RouteStepsPanel route={selected?.route} />
             <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500">
               {enrichedRoutes.map((r, i) => (
                 <span key={r.id} className="flex items-center gap-1.5">

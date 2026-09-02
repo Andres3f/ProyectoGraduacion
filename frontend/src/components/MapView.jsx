@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -61,15 +61,36 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
       {hasRouteStops && <FitBounds routes={routes} />}
 
       {/* Polilíneas por vehículo */}
-      {routes.map((route, i) =>
-        route.stops?.length > 1 ? (
+      {routes.map((route, i) => {
+        if (route.stops?.length < 2) return null;
+
+        if (route.route_geometry?.coordinates?.length > 1) {
+          // Geometría real de ORS: GeoJSON LineString [[lng,lat], ...]
+          const positions = route.route_geometry.coordinates.map(
+            ([lng, lat]) => [lat, lng]
+          );
+          return (
+            <Polyline
+              key={`line-${route.id || i}`}
+              positions={positions}
+              pathOptions={{ color: COLORS[i % COLORS.length], weight: 4 }}
+            />
+          );
+        }
+
+        // Fallback: línea recta punteada entre paradas (aproximación).
+        return (
           <Polyline
             key={`line-${route.id || i}`}
             positions={route.stops.map((s) => [s.lat, s.lng])}
-            pathOptions={{ color: COLORS[i % COLORS.length], weight: 4 }}
+            pathOptions={{
+              color: COLORS[i % COLORS.length],
+              weight: 4,
+              dashArray: '6 6',
+            }}
           />
-        ) : null
-      )}
+        );
+      })}
 
       {/* Paradas numeradas por vehículo */}
       {routes.map((route, i) =>
@@ -83,7 +104,17 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
             }}
           >
             <Popup>
-              <strong>{stop.client_name}</strong>
+              <div className="flex items-center justify-between gap-2">
+                <strong>{stop.client_name}</strong>
+                {stop.eta && (
+                  <span className="text-xs text-gray-500">
+                    {new Date(stop.eta).toLocaleTimeString('es-GT', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                )}
+              </div>
               <p className="text-sm">Parada {idx + 1}</p>
               {stop.address && <p className="text-xs text-gray-500">{stop.address}</p>}
               {stop.weight_kg != null && (
@@ -109,4 +140,40 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
 
 function indexKey(s) {
   return s.order_id ?? s.id ?? `${s.lat}-${s.lng}`;
+}
+
+export function RouteStepsPanel({ route }) {
+  const [open, setOpen] = useState(true);
+  const steps = route?.steps || [];
+  if (!steps.length) return null;
+
+  return (
+    <div className="mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 text-left"
+      >
+        <span className="font-semibold text-gray-900">🧭 Instrucciones de manejo</span>
+        <span className="text-gray-400">{open ? '▼' : '▲'}</span>
+      </button>
+      {open && (
+        <ol className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+          {steps.map((s, i) => (
+            <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold shrink-0">
+                {i + 1}
+              </span>
+              <div className="min-w-0">
+                <p className="text-gray-800">{s.instruction}</p>
+                <p className="text-xs text-gray-400">
+                  {(s.distance_m / 1000).toFixed(2)} km ·{' '}
+                  {Math.round(s.duration_s / 60)} min
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
 }

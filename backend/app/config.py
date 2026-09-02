@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     FUEL_PRICE_GTQ_PER_LITER: float = 28.0
     DRIVER_COST_GTQ_PER_HOUR: float = 35.0
 
+    # ── OpenRouteService (Sprint 4) ────────────────────────────
+    # Geometría real por calle + instrucciones de manejo (Directions API).
+    # Si ORS_API_KEY está vacía, el sistema usa línea recta como respaldo.
+    ORS_API_KEY: str = ""
+    ORS_BASE_URL: str = "https://api.openrouteservice.org"
+    ORS_PROFILE: str = "driving-car"
+    ORS_TIMEOUT_SECONDS: int = 15
+
     class Config:
         env_file = ".env"
         extra = "ignore"

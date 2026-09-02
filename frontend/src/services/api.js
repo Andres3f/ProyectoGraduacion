@@ -13,19 +13,39 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+let isRefreshing = false;
+
 // Interceptor para manejar errores 401 (sesión expirada).
-// Evita un bucle de redirección si el usuario ya se encuentra en /login: solo
-// limpia la sesión y redirige cuando no está en la página de login.
+// Primero intenta renovar con el refresh_token almacenado; si eso falla,
+// limpia la sesión y redirige a /login (evitando bucle si ya está ahí).
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error.response?.status;
-    if (status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      const isOnAuth = window.location.pathname.startsWith('/login');
-      if (!isOnAuth) {
-        window.location.href = '/login';
+    const originalRequest = error.config;
+
+    if (status === 401 && originalRequest && !originalRequest._retry && !isRefreshing) {
+      originalRequest._retry = true;
+      isRefreshing = true;
+      try {
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (!refreshToken) throw new Error('no refresh token');
+        const { data } = await axios.post('/api/auth/refresh', {
+          refresh_token: refreshToken,
+        });
+        localStorage.setItem('token', data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
+        originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+        return api(originalRequest);
+      } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user');
+        if (!window.location.pathname.startsWith('/login')) {
+          window.location.href = '/login';
+        }
+      } finally {
+        isRefreshing = false;
       }
     }
     return Promise.reject(error);
