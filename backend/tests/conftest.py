@@ -17,6 +17,9 @@ os.environ.setdefault("ALGORITHM", "HS256")
 os.environ.setdefault("ACCESS_TOKEN_EXPIRE_MINUTES", "1440")
 os.environ.setdefault("REFRESH_TOKEN_EXPIRE_DAYS", "7")
 os.environ["DEBUG"] = "false"
+# Desactivar ORS en los tests: se prioriza determinismo sobre llamadas reales
+# de red. Debe ser siempre "" para que las rutas caigan en Haversine/fallback.
+os.environ["ORS_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
@@ -78,4 +81,33 @@ def regular_user_headers(client):
         json={"email": email, "full_name": "Usuario Test", "password": "Passw0rd!"},
     )
     assert resp.status_code == 200, resp.text
+    return _auth_headers(client, email, "Passw0rd!")
+
+
+def _create_user_with_role(client, admin_headers, email, role):
+    resp = client.post(
+        "/api/users",
+        json={
+            "email": email,
+            "full_name": f"{role.capitalize()} Test",
+            "password": "Passw0rd!",
+            "role": role,
+        },
+        headers=admin_headers,
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+@pytest.fixture
+def planner_headers(client, admin_headers):
+    email = "planner.test@optirutas.com"
+    _create_user_with_role(client, admin_headers, email, "planificador")
+    return _auth_headers(client, email, "Passw0rd!")
+
+
+@pytest.fixture
+def conductor_headers(client, admin_headers):
+    email = "driver.test@optirutas.com"
+    _create_user_with_role(client, admin_headers, email, "conductor")
     return _auth_headers(client, email, "Passw0rd!")

@@ -1,6 +1,7 @@
 """Tests del endpoint de optimización de rutas (OPT-11) y persistencia (OPT-13)."""
 
 from app.database import SessionLocal
+from app.services.ors_client import ORSError
 
 
 def _make_client(client, headers, name, lat, lng):
@@ -190,3 +191,143 @@ def test_get_route_returns_stops_from_relation(client, admin_headers):
     stops = details.json()["stops"]
     assert len(stops) == 2
     assert all(isinstance(s["sequence"], int) for s in stops)
+
+
+# ── Asignación de conductor (PG) ─────────────────────────────
+
+
+def _make_route_vehicle_and_drivers(client, admin_headers):
+    """Crea 2 conductores + 1 vehículo y una ruta optimizada. Devuelve
+    (route_id, driver_a_id, driver_b_id)."""
+    driver_a = client.post(
+        "/api/users",
+        json={
+            "email": "driver.a@optirutas.com",
+            "full_name": "Conductor A",
+            "password": "Passw0rd!",
+            "role": "conductor",
+        },
+        headers=admin_headers,
+    ).json()["id"]
+    driver_b = client.post(
+        "/api/users",
+        json={
+            "email": "driver.b@optirutas.com",
+            "full_name": "Conductor B",
+            "password": "Passw0rd!",
+            "role": "conductor",
+        },
+        headers=admin_headers,
+    ).json()["id"]
+
+    v = client.post(
+        "/api/vehicles/",
+        json={"plate": "ASG-100", "capacity_kg": 5000, "driver_id": driver_a},
+        headers=admin_headers,
+    ).json()["id"]
+
+    c1 = _make_client(client, admin_headers, "Cliente As", 14.60, -89.97)
+    o1 = _make_order(client, admin_headers, c1, 1000)
+
+    resp = client.post(
+        "/api/routes/optimize",
+        json={"order_ids": [o1], "vehicle_ids": [v]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    r = resp.json()["routes"][0]
+    # Por defecto se asigna el conductor "fijo" del vehículo (driver A).
+    assert r["driver_id"] == driver_a
+    return r["id"], driver_a, driver_b
+
+
+def test_planner_can_assign_driver_to_route(client, admin_headers, planner_headers):
+    route_id, _driver_a, driver_b = _make_route_vehicle_and_drivers(
+        client, admin_headers
+    )
+    resp = client.put(
+        f"/api/routes/{route_id}/assign-driver",
+        json={"driver_id": driver_b},
+        headers=planner_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["driver_id"] == driver_b
+
+
+def test_assign_driver_rejects_non_driver_user(client, admin_headers, planner_headers):
+    route_id, _a, _b = _make_route_vehicle_and_drivers(client, admin_headers)
+    # El admin (rol admin) no es un conductor activo → debe dar 400.
+    resp = client.put(
+        f"/api/routes/{route_id}/assign-driver",
+        json={"driver_id": 1},
+        headers=planner_headers,
+    )
+    assert resp.status_code == 400
+
+
+def test_conductor_cannot_assign_driver(client, admin_headers, conductor_headers):
+    route_id, _a, _b = _make_route_vehicle_and_drivers(client, admin_headers)
+    resp = client.put(
+        f"/api/routes/{route_id}/assign-driver",
+        json={"driver_id": _b},
+        headers=conductor_headers,
+    )
+    assert resp.status_code == 403
+
+
+# ── Geometría real por calle (ORS Directions) ────────────────
+
+
+def _mock_geometry(monkeypatch):
+    geo = {
+        "geometry": {"type": "LineString", "coordinates": [[-89.98, 14.63], [-89.97, 14.63]]},
+        "distance_m": 1500,
+        "duration_s": 300,
+        "steps": [{"instruction": "Continue on road", "distance": 1500, "duration": 300}],
+    }
+
+    def fake_get_route_geometry(coordinates):
+        return geo
+
+    monkeypatch.setattr("app.routers.routes.get_route_geometry", fake_get_route_geometry)
+
+    monkeypatch.setattr("app.services.ors_client.settings.ORS_API_KEY", "test-key")
+    return geo
+
+
+def test_route_uses_real_geometry_when_ors_available(client, admin_headers, monkeypatch):
+    _mock_geometry(monkeypatch)
+    c1, c2, c3, v1, v2 = _setup(client, admin_headers)
+    o1 = _make_order(client, admin_headers, c1, 1000)
+    o2 = _make_order(client, admin_headers, c2, 500)
+
+    resp = client.post(
+        "/api/routes/optimize",
+        json={"order_ids": [o1, o2], "vehicle_ids": [v1]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    route = resp.json()["routes"][0]
+    assert route["route_geometry"] is not None
+    assert route["route_geometry"]["type"] == "LineString"
+    assert len(route["steps"]) == 1
+    assert route["total_duration_min"] == 5.0  # 300s / 60
+
+
+def test_route_falls_back_to_straight_line_without_ors(client, admin_headers, monkeypatch):
+    def fail_geometry(coordinates):
+        raise ORSError("sin API key")
+
+    monkeypatch.setattr("app.routers.routes.get_route_geometry", fail_geometry)
+    c1, c2, c3, v1, v2 = _setup(client, admin_headers)
+    o1 = _make_order(client, admin_headers, c1, 1000)
+
+    resp = client.post(
+        "/api/routes/optimize",
+        json={"order_ids": [o1], "vehicle_ids": [v1]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    route = resp.json()["routes"][0]
+    assert route["route_geometry"] is None
+    assert len(route["stops"]) == 1

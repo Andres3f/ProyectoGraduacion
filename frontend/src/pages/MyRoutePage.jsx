@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import MapView from '../components/MapView';
+import MapView, { RouteStepsPanel } from '../components/MapView';
 
 function getErrorMessage(err) {
   const detail = err?.response?.data?.detail;
@@ -95,6 +95,7 @@ export default function MyRoutePage() {
       {(route?.stops?.length ?? 0) > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6">
           <MapView routes={[{ ...route, stops: route.stops }]} />
+          <RouteStepsPanel route={route} />
         </div>
       )}
 

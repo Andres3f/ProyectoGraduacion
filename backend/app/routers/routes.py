@@ -1,8 +1,11 @@
+import logging
 from typing import List
+from datetime import datetime, date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.route import Route, RouteStatus
 from app.models.route_stop import RouteStop
@@ -10,16 +13,20 @@ from app.models.order import Order, OrderStatus
 from app.models.vehicle import Vehicle
 from app.models.user import User, RoleEnum
 from app.schemas.route import (
-    RouteOut, OptimizeRequest, OptimizeResponse,
+    RouteOut, OptimizeRequest, OptimizeResponse, AssignDriverRequest,
 )
 from app.auth.dependencies import get_current_user, require_role
 from app.services.optimizer import optimize_routes
 from app.services.metrics import compare_before_after
+from app.services.ors_client import ORSError, get_route_geometry
 
 router = APIRouter(prefix="/api/routes", tags=["Rutas"])
 
+logger = logging.getLogger(__name__)
+
 
 @router.get("/", response_model=List[RouteOut])
+@router.get("", response_model=List[RouteOut], include_in_schema=False)
 def list_routes(
     db: Session = Depends(get_db),
     _: User = Depends(
@@ -82,6 +89,51 @@ def _load_vehicles(db: Session, vehicle_ids: List[int]) -> List[Vehicle]:
     return vehicles
 
 
+def _straight_leg_km(coord_a: dict, coord_b: dict) -> float:
+    """Distancia en línea recta (km) entre dos coordenadas."""
+    import math
+
+    d_lat = math.radians(coord_b["lat"] - coord_a["lat"])
+    d_lng = math.radians(coord_b["lng"] - coord_a["lng"])
+    a = (
+        math.sin(d_lat / 2) ** 2
+        + math.cos(math.radians(coord_a["lat"]))
+        * math.cos(math.radians(coord_b["lat"]))
+        * math.sin(d_lng / 2) ** 2
+    )
+    return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _apply_ors_duration_and_etas(
+    stop_rows: List[RouteStop],
+    coords: List[dict],
+    duration_s: float,
+) -> None:
+    """Sobrescribe total_duration_min y recalcula el ETA de cada parada.
+
+    Distribuye el tiempo real de ORS proporcional a la distancia en línea
+    recta de cada tramo (el backend no guarda la geometría tramo a tramo, así
+    que esta es la aproximación más simple y determinista).
+    """
+    rows = sorted(stop_rows, key=lambda r: r.sequence)
+    leg_dists = [
+        _straight_leg_km(coords[i], coords[i + 1])
+        for i in range(len(coords) - 1)
+    ]
+    total_dist = sum(leg_dists)
+    if total_dist <= 0:
+        return
+
+    base = datetime.combine(
+        date.today(),
+        datetime.strptime(settings.DEPOT_DEPARTURE, "%H:%M").time(),
+    )
+    cumul_min = 0.0
+    for row, leg_dist in zip(rows, leg_dists):
+        cumul_min += (duration_s / 60.0) * (leg_dist / total_dist)
+        row.eta = base + timedelta(minutes=cumul_min)
+
+
 # NOTA (OPT-11): se mantiene el endpoint `/api/routes/optimize` (recomendado
 # por ser más RESTful que `/api/optimize`). Decisión documentada en PG-11.
 @router.post("/optimize", response_model=OptimizeResponse)
@@ -140,6 +192,7 @@ def create_optimized_route(
         db.add(route)
         db.flush()  # obtener route.id
 
+        created_stop_rows = []
         for stop in route_data["stops"]:
             stop_row = RouteStop(
                 route_id=route.id,
@@ -149,7 +202,28 @@ def create_optimized_route(
                 distance_from_previous_km=stop["distance_from_previous_km"],
             )
             db.add(stop_row)
+            created_stop_rows.append(stop_row)
             assigned_order_ids.add(stop["order_id"])
+
+        # Geometría real por calle (ORS): si falla, la ruta se crea igual y el
+        # mapa dibuja línea recta como respaldo. Nunca rompemos la creación.
+        try:
+            coords = [{"lat": settings.DEPOT_LAT, "lng": settings.DEPOT_LNG}] + [
+                {"lat": s["lat"], "lng": s["lng"]} for s in route_data["stops"]
+            ]
+            geo = get_route_geometry(coords)
+            route.route_geometry = geo["geometry"]
+            route.steps = geo["steps"]
+            route.total_duration_min = round(geo["duration_s"] / 60, 1)
+            _apply_ors_duration_and_etas(
+                created_stop_rows, coords, geo["duration_s"]
+            )
+        except ORSError as exc:
+            logger.warning(
+                "No se pudo obtener geometría real de ORS (%s). Línea recta.", exc
+            )
+            route.route_geometry = None
+            route.steps = None
 
         created_routes.append(route)
 
@@ -199,4 +273,39 @@ def get_route(
     # (y no 403) para no confirmar la existencia de rutas ajenas.
     if current_user.role == RoleEnum.conductor and route.driver_id != current_user.id:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    return route
+
+
+@router.put("/{route_id}/assign-driver", response_model=RouteOut)
+def assign_driver(
+    route_id: int,
+    body: AssignDriverRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_role([RoleEnum.planificador, RoleEnum.admin])),
+):
+    """Asigna/reasigna el conductor de una ruta ya generada.
+
+    La optimización asigna por defecto el conductor "fijo" del vehículo
+    (vehicle.driver_id); este endpoint permite que el planificador lo cambie
+    después, por ejemplo cuando el conductor titular no puede servir ese día.
+    """
+    route = db.query(Route).filter(Route.id == route_id).first()
+    if not route:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+
+    driver = db.query(User).filter(
+        User.id == body.driver_id,
+        User.role == RoleEnum.conductor,
+        User.is_active == True,
+    ).first()
+    if not driver:
+        raise HTTPException(
+            status_code=400,
+            detail="El usuario indicado no es un conductor activo",
+        )
+
+    route.driver_id = body.driver_id
+    db.add(route)
+    db.commit()
+    db.refresh(route)
     return route

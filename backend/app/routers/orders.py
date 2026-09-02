@@ -33,6 +33,7 @@ def _get_client_or_400(db: Session, client_id: int) -> Client:
 
 
 @router.get("/", response_model=List[OrderOut])
+@router.get("", response_model=List[OrderOut], include_in_schema=False)
 def list_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

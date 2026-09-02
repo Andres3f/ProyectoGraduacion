@@ -18,6 +18,7 @@ export default function RoutesPage() {
   const [routes, setRoutes] = useState([]);
   const [orders, setOrders] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [optimizing, setOptimizing] = useState(false);
 
@@ -43,6 +44,10 @@ export default function RoutesPage() {
       .get('/vehicles/')
       .then((res) => setVehicles(res.data))
       .catch((err) => setLoadError((prev) => prev || getErrorMessage(err, 'No se pudo cargar los vehículos.')));
+    api
+      .get('/users')
+      .then((res) => setDrivers(res.data.filter((u) => u.role === 'conductor')))
+      .catch(() => {});
   };
 
   useEffect(loadData, []);
@@ -61,6 +66,43 @@ export default function RoutesPage() {
 
   const plateFor = (vehicleId) =>
     vehicles.find((v) => v.id === vehicleId)?.plate || `#${vehicleId}`;
+
+  const driverName = (driverId) =>
+    drivers.find((d) => d.id === driverId)?.full_name || 'Sin asignar';
+
+  const handleAssignDriver = async (routeId, driverId) => {
+    try {
+      await api.put(`/routes/${routeId}/assign-driver`, { driver_id: Number(driverId) });
+      loadData();
+      setResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              routes: prev.routes.map((r) =>
+                r.id === routeId ? { ...r, driver_id: Number(driverId) } : r
+              ),
+            }
+          : prev
+      );
+    } catch (err) {
+      setError(getErrorMessage(err, 'No se pudo asignar el conductor.'));
+    }
+  };
+
+  const driverSelect = (r) => (
+    <select
+      value={r.driver_id || ''}
+      onChange={(e) => handleAssignDriver(r.id, e.target.value)}
+      className="border rounded px-2 py-1 text-sm bg-white"
+    >
+      <option value="">Sin asignar</option>
+      {drivers.map((d) => (
+        <option key={d.id} value={d.id}>
+          {d.full_name}
+        </option>
+      ))}
+    </select>
+  );
 
   const handleOptimize = async () => {
     setError(null);
@@ -239,6 +281,7 @@ export default function RoutesPage() {
                 <tr>
                   <th className="px-6 py-3 text-left">Ruta</th>
                   <th className="px-6 py-3 text-left">Vehículo</th>
+                  <th className="px-6 py-3 text-left">Conductor</th>
                   <th className="px-6 py-3 text-center">Paradas</th>
                   <th className="px-6 py-3 text-right">Distancia (km)</th>
                   <th className="px-6 py-3 text-right">Peso (kg)</th>
@@ -256,6 +299,7 @@ export default function RoutesPage() {
                         (#{r.vehicle_id})
                       </span>
                     </td>
+                    <td className="px-6 py-4">{driverSelect(r)}</td>
                     <td className="px-6 py-4 text-center">
                       {r.stops?.length ?? 0}
                     </td>
@@ -326,6 +370,10 @@ export default function RoutesPage() {
                 <span>⏱ {r.total_duration_min ?? '—'} min</span>
                 <span>⚖️ {r.total_weight_kg ?? '—'} kg</span>
                 <span>📍 {r.stops?.length ?? 0} paradas</span>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-sm">
+                <span className="text-gray-500">👤 Conductor:</span>
+                {driverSelect(r)}
               </div>
             </div>
           ))}

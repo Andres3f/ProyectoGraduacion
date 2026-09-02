@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/clients", tags=["Clientes"])
 
 
 @router.get("/", response_model=List[ClientOut])
+@router.get("", response_model=List[ClientOut], include_in_schema=False)
 def list_clients(
     zone: Optional[str] = Query(None, description="Filtrar por zona"),
     name: Optional[str] = Query(None, description="Filtrar por nombre"),

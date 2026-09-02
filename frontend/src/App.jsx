@@ -14,6 +14,13 @@ import ClientsPage from './pages/ClientsPage';
 import ReportsPage from './pages/ReportsPage';
 import ManagerDashboardPage from './pages/ManagerDashboardPage';
 
+function HomeByRole() {
+  const { user } = useAuth();
+  if (user.role === 'gerente') return <ManagerDashboardPage />;
+  if (user.role === 'conductor') return <MyRoutePage />;
+  return <DashboardPage />;
+}
+
 function App() {
   const { user } = useAuth();
 
@@ -27,17 +34,21 @@ function App() {
             element={user ? <Navigate to="/" /> : <LoginPage />}
           />
           <Route element={<ProtectedRoute allowedRoles={['admin', 'planificador', 'gerente', 'conductor']} />}>
-            <Route path="/" element={<DashboardPage />} />
+            <Route path="/" element={<HomeByRole />} />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={['admin', 'planificador']} />}>
             <Route path="/orders" element={<OrdersPage />} />
             <Route path="/routes" element={<RoutesPage />} />
             <Route path="/map" element={<MapPage />} />
-            <Route path="/users/new" element={<AddUserPage />} />
-            <Route path="/my-route" element={<MyRoutePage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/clients" element={<ClientsPage />} />
             <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/users/new" element={<AddUserPage />} />
+          </Route>
+          <Route element={<ProtectedRoute allowedRoles={['conductor']} />}>
+            <Route path="/my-route" element={<MyRoutePage />} />
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['gerente', 'admin']} />}>
             <Route path="/dashboard-gerente" element={<ManagerDashboardPage />} />

@@ -34,6 +34,8 @@ class RouteOut(BaseModel):
     vehicle_id: Optional[int]
     driver_id: Optional[int]
     stops: List[RouteStopOut] = []
+    route_geometry: Optional[dict] = None
+    steps: Optional[List[dict]] = None
     total_distance_km: Optional[float]
     total_duration_min: Optional[float]
     total_weight_kg: Optional[float]
@@ -46,6 +48,10 @@ class RouteOut(BaseModel):
 
 
 # ── Optimización (OPT-11) ─────────────────────────────────────
+
+
+class AssignDriverRequest(BaseModel):
+    driver_id: int
 
 
 class OptimizeRequest(BaseModel):

@@ -16,7 +16,7 @@ export default function ReportsPage() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    Promise.all([api.get('/routes/'), api.get('/vehicles/'), api.get('/users/')])
+    Promise.all([api.get('/routes/'), api.get('/vehicles/'), api.get('/users')])
       .then(([routesRes, vehiclesRes, usersRes]) => {
         setRoutes(routesRes.data);
         setVehicles(vehiclesRes.data);

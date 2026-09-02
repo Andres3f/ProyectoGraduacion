@@ -39,6 +39,10 @@ class Route(Base):
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    # Geometría real por carretera (GeoJSON LineString de ORS) + instrucciones
+    # de manejo por tramo. None si no se pudo obtener (fallback línea recta).
+    route_geometry = Column(JSON, nullable=True)
+    steps = Column(JSON, nullable=True)
 
     # Paradas relacionadas (tabla route_stops), ordenadas por secuencia.
     # `RouteOut.stops` se puebla desde aquí (no desde el JSON).

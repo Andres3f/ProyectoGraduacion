@@ -27,6 +27,7 @@ def _validate_driver(db: Session, driver_id: int | None) -> None:
 
 
 @router.get("/", response_model=List[VehicleOut])
+@router.get("", response_model=List[VehicleOut], include_in_schema=False)
 def list_vehicles(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
