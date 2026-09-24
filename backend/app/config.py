@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     ORS_BASE_URL: str = "https://api.openrouteservice.org"
     ORS_PROFILE: str = "driving-hgv"
     ORS_TIMEOUT_SECONDS: float = 15.0
+    # Servidor OSRM usado como respaldo sin clave cuando ORS falla o la clave
+    # no tiene acceso al perfil (p. ej. driving-hgv requiere plan de pago).
+    OSRM_BASE_URL: str = "https://router.project-osrm.org"
 
     class Config:
         env_file = ".env"

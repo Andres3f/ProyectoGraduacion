@@ -25,18 +25,25 @@ function numberedIcon(number, color) {
   });
 }
 
+function stopCoords(s) {
+  return [s.lat ?? s.latitude, s.lng ?? s.longitude];
+}
+
+function stopCoordsWithin(s) {
+  const [lat, lng] = stopCoords(s);
+  return Number.isFinite(lat) && Number.isFinite(lng);
+}
+
 function FitBounds({ routes }) {
   const map = useMap();
-  const positions = routes.flatMap((r) => r.stops ?? []).flatMap((s) => [
-    s.lat,
-    s.lng,
-  ]);
+  const positions = routes.flatMap((r) => r.stops ?? []).flatMap(stopCoords);
   const key = positions.join(',');
   useEffect(() => {
-    if (positions.length > 1) {
+    if (positions.filter(Number.isFinite).length > 1) {
       const bounds = routes
         .flatMap((r) => r.stops ?? [])
-        .map((s) => [s.lat, s.lng]);
+        .map(stopCoords)
+        .filter((c) => c.every(Number.isFinite));
       map.fitBounds(bounds, { padding: [40, 40] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -62,7 +69,10 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
 
       {/* Polilíneas por vehículo */}
       {routes.map((route, i) => {
-        if (route.stops?.length < 2) return null;
+        const validStops = (route.stops ?? []).filter((s) =>
+          stopCoordsWithin(s)
+        );
+        if (validStops.length < 2) return null;
 
         if (route.route_geometry?.coordinates?.length > 1) {
           // Geometría real de ORS: GeoJSON LineString [[lng,lat], ...]
@@ -82,7 +92,7 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
         return (
           <Polyline
             key={`line-${route.id || i}`}
-            positions={route.stops.map((s) => [s.lat, s.lng])}
+            positions={validStops.map(stopCoords)}
             pathOptions={{
               color: COLORS[i % COLORS.length],
               weight: 4,
@@ -94,10 +104,12 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
 
       {/* Paradas numeradas por vehículo */}
       {routes.map((route, i) =>
-        (route.stops ?? []).map((stop, idx) => (
+        (route.stops ?? [])
+          .filter((s) => stopCoordsWithin(s))
+          .map((stop, idx) => (
           <Marker
             key={`${route.id || i}-${indexKey(stop)}`}
-            position={[stop.lat, stop.lng]}
+            position={stopCoords(stop)}
             icon={numberedIcon(idx + 1, COLORS[i % COLORS.length])}
             eventHandlers={{
               click: () => onSelectStop && onSelectStop(route, stop),
@@ -139,7 +151,8 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
 }
 
 function indexKey(s) {
-  return s.order_id ?? s.id ?? `${s.lat}-${s.lng}`;
+  const [lat, lng] = stopCoords(s);
+  return s.order_id ?? s.id ?? `${lat}-${lng}`;
 }
 
 export function RouteStepsPanel({ route }) {
