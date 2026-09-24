@@ -2,9 +2,9 @@
 
 Combina la Matrix API (distancias/tiempos reales por carretera, usada por el
 optimizador) y la Directions API (geometría por carretera + instrucciones de
-manejo, usada por el mapa). Si ORS no está disponible o no hay API key, los
-callers deben tener un fallback (Haversine / línea recta) — este módulo nunca
-debe tumbar la optimización.
+manejo, usada por el mapa). Si ORS no está disponible o no hay API key,
+``get_route_geometry`` cae a OSRM (sin clave); la matriz cae a Haversine en el
+optimizer. Este módulo nunca debe tumbar la optimización.
 """
 
 import logging
@@ -70,13 +70,34 @@ def get_distance_duration_matrix(locations: list[dict]) -> tuple[list[list[int]]
 
 
 def get_route_geometry(coordinates: list[dict]) -> dict:
-    """Llama a ORS Directions API y devuelve geometría real + instrucciones.
+    """Devuelve geometría real + instrucciones, con respaldo automático.
+
+    Intenta ORS Directions API y, si falla (sin clave o servicio deshabilitado),
+    usa OSRM (sin clave) como proveedor alternativo. Devuelve siempre el mismo
+    shape: {"geometry": GeoJSON LineString, "distance_m", "duration_s", "steps"}.
 
     ``coordinates``: lista ordenada de {"lat":.., "lng":..} — la secuencia ya
     optimizada de paradas (incluyendo el depósito al inicio).
 
-    Lanza ORSError si falla; el caller debe tener un fallback (línea recta).
+    Si ambos proveedores fallan, lanza ORSError; el caller debe tener un
+    fallback (línea recta).
     """
+    try:
+        return _ors_directions(coordinates)
+    except ORSError as exc:
+        from app.services import osrm_client
+
+        logger.warning("ORS no disponible (%s); intentando OSRM.", exc)
+        try:
+            return osrm_client.get_route_geometry(coordinates)
+        except Exception as osrm_exc:
+            raise ORSError(
+                f"ORS y OSRM fallaron al calcular la geometría: {osrm_exc}"
+            ) from exc
+
+
+def _ors_directions(coordinates: list[dict]) -> dict:
+    """Llama a ORS Directions API (perfil configurado) y devuelve geometría."""
     if not settings.ORS_API_KEY:
         raise ORSError("ORS_API_KEY no configurada")
 
