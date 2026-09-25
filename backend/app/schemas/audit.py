@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 
 class AuditLogOut(BaseModel):
+    """Respuesta API de un registro de auditoría (solo lectura)."""
     id: int
     user_id: Optional[int] = None
     accion: str

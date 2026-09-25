@@ -25,6 +25,7 @@ router = APIRouter(prefix="/api/routes", tags=["Rutas"])
 logger = logging.getLogger(__name__)
 
 
+# Listado administrativo de todas las rutas; roles con gestión de rutas.
 @router.get("/", response_model=List[RouteOut])
 @router.get("", response_model=List[RouteOut], include_in_schema=False)
 def list_routes(
@@ -40,12 +41,15 @@ def list_routes(
     return db.query(Route).all()
 
 
+# Consulta exclusiva del conductor: devuelve SU ruta en progreso (o, si no
+# existe, la planificada más reciente).
 @router.get("/my-route", response_model=RouteOut)
 def get_my_route(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([RoleEnum.conductor])),
 ):
     """Devuelve la ruta activa/pendiente del conductor autenticado (OPT-18)."""
+    # Prioridad 1: ruta en curso.
     route = (
         db.query(Route)
         .filter(
@@ -54,6 +58,7 @@ def get_my_route(
         )
         .first()
     )
+    # Prioridad 2: ruta planificada más reciente como siguiente trabajo.
     if not route:
         route = (
             db.query(Route)
@@ -69,6 +74,7 @@ def get_my_route(
     return route
 
 
+# Verifica que existan todos los pedidos solicitados antes de optimizar.
 def _load_orders(db: Session, order_ids: List[int]) -> List[Order]:
     orders = db.query(Order).filter(Order.id.in_(order_ids)).all()
     if len(orders) != len(set(order_ids)):
@@ -76,10 +82,12 @@ def _load_orders(db: Session, order_ids: List[int]) -> List[Order]:
     return orders
 
 
+# Verifica que existan los vehículos y que ninguno esté inactivo.
 def _load_vehicles(db: Session, vehicle_ids: List[int]) -> List[Vehicle]:
     vehicles = db.query(Vehicle).filter(Vehicle.id.in_(vehicle_ids)).all()
     if len(vehicles) != len(set(vehicle_ids)):
         raise HTTPException(status_code=400, detail="Algunos vehículos no existen")
+    # Los vehículos dados de baja no pueden participar en la optimización.
     inactive = [v.id for v in vehicles if not v.is_active]
     if inactive:
         raise HTTPException(
@@ -89,6 +97,7 @@ def _load_vehicles(db: Session, vehicle_ids: List[int]) -> List[Vehicle]:
     return vehicles
 
 
+# Cálculo auxiliar de distancia geodésica (haversine) en línea recta.
 def _straight_leg_km(coord_a: dict, coord_b: dict) -> float:
     """Distancia en línea recta (km) entre dos coordenadas."""
     import math
@@ -116,6 +125,7 @@ def _apply_ors_duration_and_etas(
     que esta es la aproximación más simple y determinista).
     """
     rows = sorted(stop_rows, key=lambda r: r.sequence)
+    # Proporción de cada tramo según su distancia en línea recta.
     leg_dists = [
         _straight_leg_km(coords[i], coords[i + 1])
         for i in range(len(coords) - 1)
@@ -124,10 +134,12 @@ def _apply_ors_duration_and_etas(
     if total_dist <= 0:
         return
 
+    # Hora de salida del depósito configurada en settings como base de los ETAs.
     base = datetime.combine(
         date.today(),
         datetime.strptime(settings.DEPOT_DEPARTURE, "%H:%M").time(),
     )
+    # Distribuye la duración total proporcional a la distancia de cada tramo.
     cumul_min = 0.0
     for row, leg_dist in zip(rows, leg_dists):
         cumul_min += (duration_s / 60.0) * (leg_dist / total_dist)
@@ -150,11 +162,13 @@ def create_optimized_route(
     en kg y ventanas de tiempo. Crea una fila Route por cada vehículo usado y
     sus RouteStop asociadas. Los pedidos pasan a estado ``en_ruta``.
     """
+    # Valida pedidos y vehículos antes de llamar al optimizador.
     orders = _load_orders(db, req.order_ids)
     vehicles = _load_vehicles(db, req.vehicle_ids)
 
     result = optimize_routes(orders, vehicles)
 
+    # Si no hubo asignación posible, se responde con los pedidos sin asignar.
     if not result["success"]:
         return OptimizeResponse(
             success=False,
@@ -162,6 +176,7 @@ def create_optimized_route(
             unassigned_order_ids=list(result["unassigned_order_ids"]),
         )
 
+    # El prefijo numérico de nombres se deriva de las rutas ya existentes.
     route_number_base = len(db.query(Route).all())
     created_routes = []
     assigned_order_ids = set()
@@ -176,6 +191,8 @@ def create_optimized_route(
             out.append(item)
         return out
 
+    # Materializa cada ruta optimizada junto con sus paradas y el conductor
+    # fijo del vehículo como responsable por defecto.
     for idx, route_data in enumerate(result["routes"]):
         vehicle = next(v for v in vehicles if v.id == route_data["vehicle_id"])
         route = Route(
@@ -234,6 +251,7 @@ def create_optimized_route(
 
     from app.services.audit import log_action
 
+    # Registra la optimización en el log de auditoría con su resumen.
     log_action(
         db, current_user.id, "optimizar_rutas",
         entidad="route", detalle={
@@ -246,6 +264,7 @@ def create_optimized_route(
     for route in created_routes:
         db.refresh(route)
 
+    # Calcula el ahorro comparando la ruta naive contra la optimizada.
     metrics = compare_before_after(
         orders,
         [r["stops"] for r in result["routes"]],
@@ -260,6 +279,7 @@ def create_optimized_route(
     )
 
 
+# Detalle de ruta: cualquier autenticado, pero los conductores solo la propia.
 @router.get("/{route_id}", response_model=RouteOut)
 def get_route(
     route_id: int,
@@ -276,6 +296,7 @@ def get_route(
     return route
 
 
+# Cambio de conductor sobre una ruta ya generada (admin y planificador).
 @router.put("/{route_id}/assign-driver", response_model=RouteOut)
 def assign_driver(
     route_id: int,
@@ -293,6 +314,7 @@ def assign_driver(
     if not route:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
 
+    # El nuevo conductor debe ser un usuario con rol conductor y estar activo.
     driver = db.query(User).filter(
         User.id == body.driver_id,
         User.role == RoleEnum.conductor,

@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     db = SessionLocal()
     try:
+        # Selecciona únicamente las rutas que aún no tienen geometría guardada.
         routes = [
             r
             for r in db.query(Route).all()
@@ -36,6 +37,7 @@ def main() -> None:
 
         updated = 0
         for route in routes:
+            # Construye la secuencia de paradas: depósito primero, luego en orden.
             stops = sorted(route.stops, key=lambda s: s.sequence)
             coords = [{"lat": settings.DEPOT_LAT, "lng": settings.DEPOT_LNG}]
             coords += [
@@ -55,6 +57,7 @@ def main() -> None:
                 logger.warning("Ruta #%s: no se pudo generar geometría: %s", route.id, exc)
                 continue
 
+            # Persiste geometría, pasos y duración estimados; marca la fuente.
             route.route_geometry = geo["geometry"]
             route.steps = geo["steps"]
             route.total_duration_min = round(geo["duration_s"] / 60, 1)
@@ -69,6 +72,7 @@ def main() -> None:
                 geo["distance_m"] / 1000,
             )
 
+        # Aplica todos los cambios en una sola transacción al final.
         db.commit()
         logger.info("Listo: %s rutas actualizadas.", updated)
     finally:

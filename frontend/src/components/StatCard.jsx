@@ -1,5 +1,7 @@
+// Tarjeta reutilizable para mostrar una métrica o valor estadístico.
 export default function StatCard({ label, value, icon, highlight }) {
   return (
+    // Si `highlight` está activo, la tarjeta se resalta con el color de marca
     <div
       className={`bg-white rounded-2xl p-5 shadow-sm border ${
         highlight ? 'border-brand-500 bg-brand-50' : 'border-gray-100'

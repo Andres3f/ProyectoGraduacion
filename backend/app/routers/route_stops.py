@@ -12,6 +12,8 @@ router = APIRouter(prefix="/api/route-stops", tags=["Paradas de ruta"])
 VALID_STATUSES = {"entregado", "fallido"}
 
 
+# Acción de campo del conductor: registra el resultado de la entrega de una
+# parada de SU ruta. El rol conductor es obligatorio.
 @router.put("/{stop_id}/status")
 def update_stop_status(
     stop_id: int,
@@ -24,11 +26,13 @@ def update_stop_status(
     Un conductor solo puede actualizar paradas de sus propias rutas; cualquier
     otra parada devuelve 404 para no filtrar información ajena.
     """
+    # Valida que el estado llegue entre los permitidos por el sistema.
     if status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400, detail="Estado inválido (usa 'entregado' o 'fallido')"
         )
 
+    # Restringe la parada a las rutas cuyo driver es el usuario autenticado.
     stop = (
         db.query(RouteStop)
         .join(Route)
@@ -46,6 +50,7 @@ def update_stop_status(
 
     from sqlalchemy import func
 
+    # Solo una entrega registra timestamp; una fallida lo limpia.
     stop.status = status
     stop.delivered_at = func.now() if status == "entregado" else None
     db.add(stop)
@@ -62,6 +67,7 @@ def update_stop_status(
     db.commit()
     from app.services.audit import log_action
 
+    # Audita el marcado de la entrega con su estado final.
     log_action(
         db, current_user.id, "marcar_entrega",
         entidad="route_stop", entidad_id=stop_id,

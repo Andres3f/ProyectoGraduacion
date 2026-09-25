@@ -3,6 +3,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
+// Lista de roles disponibles para las nuevas cuentas del sistema.
 const roles = [
   { value: 'admin', label: 'Administrador' },
   { value: 'planificador', label: 'Planificador' },
@@ -10,9 +11,12 @@ const roles = [
   { value: 'gerente', label: 'Gerente' },
 ];
 
+/* Página para crear nuevos usuarios del sistema (acceso restringido a administradores). */
 export default function AddUserPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  // Estado del formulario con los datos del nuevo usuario (rol por defecto: planificador).
   const [form, setForm] = useState({
     email: '',
     full_name: '',
@@ -23,15 +27,18 @@ export default function AddUserPage() {
   const [success, setSuccess] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // Guard: si el usuario actual no es admin, redirigir al inicio.
   if (user?.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
 
+  // Actualiza un campo del formulario a partir del evento del input.
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Envía los datos del formulario al backend para crear el usuario.
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError(null);
@@ -43,6 +50,7 @@ export default function AddUserPage() {
       setSuccess('Usuario creado correctamente.');
       setTimeout(() => navigate('/'), 1200);
     } catch (err) {
+      // Extrae el mensaje de error del backend (puede llegar como string o lista).
       const data = err?.response?.data;
       let message = 'No se pudo crear el usuario.';
 
@@ -73,6 +81,7 @@ export default function AddUserPage() {
 
       <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Campo de correo electrónico del nuevo usuario */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Correo electrónico</label>
             <input
@@ -85,6 +94,7 @@ export default function AddUserPage() {
             />
           </div>
 
+          {/* Campo de nombre completo */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Nombre completo</label>
             <input
@@ -97,6 +107,7 @@ export default function AddUserPage() {
             />
           </div>
 
+          {/* Campo de contraseña con longitud mínima de 6 caracteres */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
             <input
@@ -110,6 +121,7 @@ export default function AddUserPage() {
             />
           </div>
 
+          {/* Selector de rol del nuevo usuario */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Rol</label>
             <select
@@ -126,9 +138,11 @@ export default function AddUserPage() {
             </select>
           </div>
 
+          {/* Mensajes de error y éxito de la operación */}
           {error && <p className="text-sm text-red-500">{error}</p>}
           {success && <p className="text-sm text-green-600">{success}</p>}
 
+          {/* Botón de envío; se deshabilita mientras se está guardando */}
           <button
             type="submit"
             disabled={loading}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import MapView, { ROUTE_COLORS, RouteStepsPanel } from '../components/MapView';
 
+/* Página del mapa: visualiza las rutas optimizadas y sus paradas sobre el mapa. */
 export default function MapPage() {
   const [routes, setRoutes] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -9,6 +10,7 @@ export default function MapPage() {
   const [selected, setSelected] = useState(null);
   const [loadError, setLoadError] = useState(null);
 
+  // Carga en paralelo rutas y pedidos al montar la página.
   useEffect(() => {
     Promise.all([api.get('/routes/'), api.get('/orders/')])
       .then(([routesRes, ordersRes]) => {
@@ -29,6 +31,8 @@ export default function MapPage() {
   const orderById = {};
   orders.forEach((o) => (orderById[o.id] = o));
 
+  // Enriquecimiento de rutas: se completan las paradas con datos del pedido
+  // correspondiente (coordenadas, cliente, dirección y peso) para poder pintarlas.
   const enrichedRoutes = routes
     .map((r) => ({
       ...r,
@@ -48,11 +52,13 @@ export default function MapPage() {
     }))
     .filter((r) => r.stops.length > 0);
 
+  // Asigna un color por ruta (reutilizando la paleta de colores del mapa).
   const vehicles = enrichedRoutes.reduce((acc, r, i) => {
     acc[r.id] = { color: ROUTE_COLORS[i % ROUTE_COLORS.length] };
     return acc;
   }, {});
 
+  // Al seleccionar una parada, guarda el detalle para el panel lateral.
   const handleSelectStop = (route, stop) => {
     setSelected({
       route,
@@ -65,6 +71,7 @@ export default function MapPage() {
     });
   };
 
+  {/* Contador total de puntos de entrega y rutas a mostrar */}
   const stopCount = enrichedRoutes.reduce((acc, r) => acc + r.stops.length, 0);
 
   return (
@@ -73,6 +80,7 @@ export default function MapPage() {
         📍 Mapa de rutas optimizadas
       </h1>
 
+      {/* Aviso si falló la carga de datos del mapa */}
       {loadError && (
         <div className="mb-4 bg-yellow-50 text-yellow-800 text-sm rounded-lg p-3">
           {loadError}
@@ -80,14 +88,17 @@ export default function MapPage() {
       )}
 
       {loading ? (
+        /* Indicador de carga mientras se obtienen rutas y pedidos */
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-brand-500 border-t-transparent" />
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className={`${selected ? 'lg:col-span-2' : ''} bg-white rounded-2xl p-4 shadow-sm border border-gray-100`}>
+            {/* Mapa con las rutas y panel de pasos de la ruta seleccionada */}
             <MapView routes={enrichedRoutes} onSelectStop={handleSelectStop} />
             <RouteStepsPanel route={selected?.route} />
+            {/* Leyenda de colores por ruta */}
             <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500">
               {enrichedRoutes.map((r, i) => (
                 <span key={r.id} className="flex items-center gap-1.5">
@@ -104,6 +115,7 @@ export default function MapPage() {
             </div>
           </div>
 
+          {/* Panel lateral con el detalle de la parada seleccionada */}
           {selected && (
             <aside className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 h-fit">
               <div className="flex items-center justify-between mb-3">

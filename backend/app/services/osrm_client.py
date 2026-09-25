@@ -90,7 +90,9 @@ def get_route_geometry(coordinates: list[dict]) -> dict:
     if len(coordinates) < 2:
         raise OSRMError("OSRM requiere al menos 2 coordenadas")
 
+    # OSRM recorre puntos "lng,lat" separados por ';' en la URL misma.
     points = ";".join(f"{c['lng']},{c['lat']}" for c in coordinates)
+    # overview=full da la geometría completa; steps=true las instrucciones.
     url = (
         f"{settings.OSRM_BASE_URL}/route/v1/driving/{points}"
         f"?overview=full&geometries=geojson&steps=true"
@@ -113,6 +115,7 @@ def get_route_geometry(coordinates: list[dict]) -> dict:
     if not geometry or not geometry.get("coordinates"):
         raise OSRMError("OSRM devolvió una ruta sin geometría")
 
+    # Convierte cada step de OSRM en una instrucción en español.
     steps = []
     for leg in route.get("legs", []):
         for step in leg.get("steps", []):

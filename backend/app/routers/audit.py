@@ -13,6 +13,8 @@ from app.auth.dependencies import require_role
 router = APIRouter(prefix="/api/logs", tags=["Auditoría"])
 
 
+# Endpoint exclusivo de administradores: expone el rastro de auditoría del
+# sistema (quiénes crearon/optimizaron/exportaron y cuándo).
 @router.get("", response_model=List[AuditLogOut])
 def list_logs(
     accion: str | None = Query(None, description="Filtrar por acción (ej: optimizar_rutas)"),
@@ -24,6 +26,7 @@ def list_logs(
 ):
     """Consulta los logs de auditoría (solo admin)."""
     query = db.query(AuditLog)
+    # Los filtros son opcionales y se aplican de forma acumulativa sobre la consulta.
     if accion:
         query = query.filter(AuditLog.accion == accion)
     if user_id:
@@ -32,4 +35,5 @@ def list_logs(
         query = query.filter(AuditLog.created_at >= date_from)
     if date_to:
         query = query.filter(AuditLog.created_at <= date_to)
+    # Orden cronológico inverso, limitado a 200 registros para acotar la respuesta.
     return query.order_by(AuditLog.created_at.desc()).limit(200).all()

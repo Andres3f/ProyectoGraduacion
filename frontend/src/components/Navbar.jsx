@@ -1,6 +1,8 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+// Menú de navegación según el rol del usuario autenticado.
+// Cada rol ve únicamente los módulos a los que tiene acceso.
 const MENU_BY_ROLE = {
   admin: [
     { to: '/', label: 'Dashboard' },
@@ -24,9 +26,11 @@ const MENU_BY_ROLE = {
   ],
 };
 
+// Barra de navegación superior: muestra logo, enlaces según rol, usuario y botón de salir.
 export default function Navbar() {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
+  // Los enlaces del menú dependen del rol del usuario actual
   const links = MENU_BY_ROLE[user?.role] || [];
 
   return (
@@ -43,6 +47,7 @@ export default function Navbar() {
             <Link
               key={l.to}
               to={l.to}
+              // Resalta el enlace activo según la ruta actual
               className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 pathname === l.to
                   ? 'bg-brand-100 text-brand-700'
@@ -56,12 +61,14 @@ export default function Navbar() {
 
         {/* User */}
         <div className="flex items-center gap-3">
+          {/* Nombre y rol del usuario logueado */}
           <span className="text-sm text-gray-500">
             {user?.full_name}{' '}
             <span className="inline-block px-2 py-0.5 rounded-full bg-brand-100 text-brand-700 text-xs font-semibold">
               {user?.role}
             </span>
           </span>
+          {/* Cierra la sesión del usuario */}
           <button
             onClick={logout}
             className="text-sm text-red-500 hover:text-red-700 font-medium"

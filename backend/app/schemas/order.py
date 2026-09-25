@@ -5,6 +5,8 @@ from app.models.order import OrderStatus
 
 
 class OrderCreate(BaseModel):
+    """Datos de entrada para crear un pedido; el snapshot del cliente
+    (nombre, dirección, coordenadas) se copia automáticamente desde el cliente."""
     client_id: int
     weight_kg: float = Field(0, ge=0)
     volume_m3: float = Field(0, ge=0)
@@ -15,6 +17,7 @@ class OrderCreate(BaseModel):
 
 
 class OrderUpdate(BaseModel):
+    """Edición parcial de un pedido (incluye cambio de estado/entrega)."""
     client_id: Optional[int] = None
     weight_kg: Optional[float] = Field(default=None, ge=0)
     volume_m3: Optional[float] = Field(default=None, ge=0)
@@ -23,6 +26,7 @@ class OrderUpdate(BaseModel):
 
 
 class OrderOut(BaseModel):
+    """Respuesta API de un pedido con su snapshot de cliente y métricas de carga."""
     id: int
     client_id: int
     # Snapshot denormalizado del cliente (mantiene compatibilidad con el

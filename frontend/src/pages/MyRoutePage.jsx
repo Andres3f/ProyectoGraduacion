@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import MapView, { RouteStepsPanel } from '../components/MapView';
 
+// Normaliza los errores del backend a un mensaje legible para el conductor.
 function getErrorMessage(err) {
   const detail = err?.response?.data?.detail;
   if (!detail) return 'Ocurrió un error inesperado';
@@ -10,12 +11,14 @@ function getErrorMessage(err) {
   return JSON.stringify(detail);
 }
 
+/* Página del conductor: muestra su ruta asignada y permite marcar el estado de cada parada. */
 export default function MyRoutePage() {
   const [route, setRoute] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [updating, setUpdating] = useState(null);
 
+  // Obtiene la ruta asignada al conductor autenticado.
   const loadRoute = () => {
     setLoading(true);
     api
@@ -25,8 +28,10 @@ export default function MyRoutePage() {
       .finally(() => setLoading(false));
   };
 
+  // Carga la ruta al montar el componente.
   useEffect(loadRoute, []);
 
+  // Actualiza el estado de una parada (entregado/fallido) en el backend.
   const markStatus = async (stopId, status) => {
     setUpdating(stopId);
     setError(null);
@@ -42,6 +47,7 @@ export default function MyRoutePage() {
     }
   };
 
+  {/* Renderizado condicional: spinner mientras se carga la ruta */}
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-8 flex justify-center">
@@ -50,6 +56,7 @@ export default function MyRoutePage() {
     );
   }
 
+  {/* Si no hay ruta asignada (o hay error al obtenerla), se muestra un aviso */}
   if (error && !route) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -64,6 +71,7 @@ export default function MyRoutePage() {
     );
   }
 
+  // Indica si todas las paradas ya fueron resueltas (entregadas o fallidas).
   const resolved = (route?.stops || []).every((s) =>
     ['entregado', 'fallido'].includes(s.status)
   );
@@ -78,6 +86,7 @@ export default function MyRoutePage() {
             paradas · {route?.status}
           </p>
         </div>
+        {/* Insignia cuando la ruta está completada */}
         {resolved && (
           <span className="px-4 py-2 rounded-full bg-green-100 text-green-700 text-sm font-semibold">
             ✅ Ruta completada
@@ -103,6 +112,7 @@ export default function MyRoutePage() {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <ul className="divide-y divide-gray-100">
           {(route?.stops || []).map((stop, idx) => {
+            // Estado actual de la parada para decidir qué mostrar.
             const done = stop.status === 'entregado';
             const failed = stop.status === 'fallido';
             return (
@@ -124,6 +134,7 @@ export default function MyRoutePage() {
                   </div>
                 </div>
 
+                {/* Botones para marcar parada como entregada o fallida; si ya fue resuelta se muestra el estado */}
                 <div className="flex items-center gap-2 flex-wrap">
                   {stop.status === 'pendiente' ? (
                     <>

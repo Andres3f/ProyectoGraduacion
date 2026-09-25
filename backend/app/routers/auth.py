@@ -15,6 +15,8 @@ from app.auth.jwt import (
 router = APIRouter(prefix="/api/auth", tags=["Autenticación"])
 
 
+# Fabrica el par access + refresh token usando el email y rol del usuario.
+# Reutilizado por login y refresh para no duplicar la generación de tokens.
 def _token_pair_for(user: User) -> TokenPair:
     access_token = create_access_token(
         data={"sub": user.email, "role": user.role.value}
@@ -25,15 +27,18 @@ def _token_pair_for(user: User) -> TokenPair:
     return TokenPair(access_token=access_token, refresh_token=refresh_token)
 
 
+# Alta de cuenta: accesible para cualquier visitante (sin autenticación previa).
 @router.post("/register", response_model=Token)
 def register(user_in: UserCreate, db: Session = Depends(get_db)):
     """Registro de nuevo usuario."""
+    # Evita duplicados: el email actúa como identificador único de cuenta.
     existing = db.query(User).filter(User.email == user_in.email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="El email ya está registrado",
         )
+    # La contraseña nunca se guarda en claro: solo su hash.
     user = User(
         email=user_in.email,
         full_name=user_in.full_name,
@@ -44,19 +49,24 @@ def register(user_in: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
+    # Se devuelve un access token para que el registro sirva también como login.
     token = create_access_token(data={"sub": user.email, "role": user.role.value})
     return Token(access_token=token)
 
 
+# Autenticación con credenciales; genera el par de tokens de la sesión.
 @router.post("/login", response_model=TokenPair)
 def login(form: LoginRequest, db: Session = Depends(get_db)):
     """Inicio de sesión con email y contraseña. Devuelve access + refresh."""
     user = db.query(User).filter(User.email == form.email).first()
+    # Mismo mensaje para usuario inexistente o password incorrecta, para no
+    # revelar qué emails están registrados.
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales inválidas",
         )
+    # Bloquea el ingreso de cuentas desactivadas (soft delete).
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -64,20 +74,24 @@ def login(form: LoginRequest, db: Session = Depends(get_db)):
         )
     from app.services.audit import log_action
 
+    # Registra el evento de inicio de sesión en el log de auditoría.
     log_action(db, user.id, "login", entidad="user", entidad_id=user.id)
     db.commit()
     return _token_pair_for(user)
 
 
+# Renovación de sesión: valida el refresh token y emite un par nuevo.
 @router.post("/refresh", response_model=TokenPair)
 def refresh(form: RefreshRequest, db: Session = Depends(get_db)):
     """Intercambia un refresh token válido por un nuevo par de tokens."""
     payload = decode_refresh_token(form.refresh_token)
+    # Rechazo genérico ante token inválido, expirado o sin el "sub" esperado.
     if payload is None or not payload.get("sub"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token inválido o expirado",
         )
+    # Revalida que el usuario del token siga existiendo y esté activo.
     user = db.query(User).filter(User.email == payload["sub"]).first()
     if not user or not user.is_active:
         raise HTTPException(

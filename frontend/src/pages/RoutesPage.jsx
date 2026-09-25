@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../services/api';
 import StatCard from '../components/StatCard';
 
+// Normaliza los errores del backend a un mensaje legible según estado HTTP.
 function getErrorMessage(err, fallback) {
   const detail = err?.response?.data?.detail;
   if (typeof detail === 'string') return detail;
@@ -14,6 +15,8 @@ function getErrorMessage(err, fallback) {
     : fallback;
 }
 
+/* Página del planificador: selección de pedidos/vehículos, generación de
+   rutas óptimas (motor VRP) y lista de rutas generadas. */
 export default function RoutesPage() {
   const [routes, setRoutes] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -28,6 +31,7 @@ export default function RoutesPage() {
   const [error, setError] = useState(null);
   const [loadError, setLoadError] = useState(null);
 
+  // Carga en paralelo rutas, pedidos, vehículos y conductores disponibles.
   const loadData = () => {
     setLoading(true);
     setLoadError(null);
@@ -52,24 +56,30 @@ export default function RoutesPage() {
 
   useEffect(loadData, []);
 
+  // Solo los pedidos pendientes pueden optimizarse en una nueva ruta.
   const pendingOrders = orders.filter((o) => o.status === 'pendiente');
 
+  // Marca/desmarca un pedido de la selección para optimizar.
   const toggleOrder = (id) =>
     setSelectedOrders((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
 
+  // Marca/desmarca un vehículo disponible para la optimización.
   const toggleVehicle = (id) =>
     setSelectedVehicles((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
 
+  // Placa del vehículo dado su id (o el id si no se encuentra).
   const plateFor = (vehicleId) =>
     vehicles.find((v) => v.id === vehicleId)?.plate || `#${vehicleId}`;
 
+  // Nombre del conductor asignado a una ruta (o "Sin asignar").
   const driverName = (driverId) =>
     drivers.find((d) => d.id === driverId)?.full_name || 'Sin asignar';
 
+  // Asigna/reaasigna el conductor titular de una ruta y refresca la lista.
   const handleAssignDriver = async (routeId, driverId) => {
     try {
       await api.put(`/routes/${routeId}/assign-driver`, { driver_id: Number(driverId) });
@@ -89,6 +99,7 @@ export default function RoutesPage() {
     }
   };
 
+  // Combobox para elegir el conductor de una ruta.
   const driverSelect = (r) => (
     <select
       value={r.driver_id || ''}
@@ -104,6 +115,7 @@ export default function RoutesPage() {
     </select>
   );
 
+  // Llama al motor VRP del backend para generar rutas óptimas con la selección.
   const handleOptimize = async () => {
     setError(null);
     setResult(null);
@@ -122,6 +134,7 @@ export default function RoutesPage() {
     }
   };
 
+  // Métricas de ahorro devueltas por el backend tras optimizar (OPT-17).
   const metrics = result?.metrics;
 
   return (

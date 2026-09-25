@@ -9,12 +9,15 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 
+// Coordenadas de referencia: centro de Jalapa para el mapa por defecto
 const JALAPA_CENTER = [14.6339, -89.9886];
 
+// Paleta de colores para diferenciar rutas/vehículos en el mapa
 const COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c'];
 
 export const ROUTE_COLORS = COLORS;
 
+// Crea un marcador circular numerado con el color del vehículo/ruta
 function numberedIcon(number, color) {
   return L.divIcon({
     className: '',
@@ -25,15 +28,20 @@ function numberedIcon(number, color) {
   });
 }
 
+// Normaliza las coordenadas de una parada a [lat, lng]
+// (soporta tanto `lat/lng` como `latitude/longitude`)
 function stopCoords(s) {
   return [s.lat ?? s.latitude, s.lng ?? s.longitude];
 }
 
+// Verifica que una parada tenga coordenadas numéricas válidas
 function stopCoordsWithin(s) {
   const [lat, lng] = stopCoords(s);
   return Number.isFinite(lat) && Number.isFinite(lng);
 }
 
+// Ajusta automáticamente el encuadre del mapa para que todas las
+// paradas de las rutas queden visibles con un margen de 40px.
 function FitBounds({ routes }) {
   const map = useMap();
   const positions = routes.flatMap((r) => r.stops ?? []).flatMap(stopCoords);
@@ -51,6 +59,7 @@ function FitBounds({ routes }) {
   return null;
 }
 
+// Componente principal del mapa: dibuja rutas, paradas numeradas y pedidos sueltos.
 export default function MapView({ routes = [], markers = [], onSelectStop }) {
   const hasRouteStops = routes.some((r) => (r.stops?.length ?? 0) > 1);
 
@@ -60,6 +69,7 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
       zoom={13}
       className="h-[500px] rounded-xl shadow-lg z-0"
     >
+      {/* Capa base de OpenStreetMap */}
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -112,6 +122,7 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
             position={stopCoords(stop)}
             icon={numberedIcon(idx + 1, COLORS[i % COLORS.length])}
             eventHandlers={{
+              // Al hacer clic en una parada informa al componente padre
               click: () => onSelectStop && onSelectStop(route, stop),
             }}
           >
@@ -150,11 +161,13 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
   );
 }
 
+// Genera una clave única para cada parada (por pedido, id o coordenadas)
 function indexKey(s) {
   const [lat, lng] = stopCoords(s);
   return s.order_id ?? s.id ?? `${lat}-${lng}`;
 }
 
+// Panel colapsable con las instrucciones de manejo paso a paso de una ruta.
 export function RouteStepsPanel({ route }) {
   const [open, setOpen] = useState(true);
   const steps = route?.steps || [];
@@ -162,6 +175,7 @@ export function RouteStepsPanel({ route }) {
 
   return (
     <div className="mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      {/* Botón para expandir/colapsar las instrucciones */}
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-left"
@@ -171,6 +185,7 @@ export function RouteStepsPanel({ route }) {
       </button>
       {open && (
         <ol className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+          {/* Cada indicación muestra distancia y duración estimada */}
           {steps.map((s, i) => (
             <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold shrink-0">

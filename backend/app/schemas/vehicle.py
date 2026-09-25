@@ -9,12 +9,14 @@ PLATE_REGEX = r"^[A-Z]{1,3}-?\d{3,4}$"
 
 
 class VehicleCreate(BaseModel):
+    """Datos de entrada para registrar un vehículo."""
     plate: str
     description: Optional[str] = None
     capacity_kg: float = Field(10000, gt=0)
     capacity_m3: float = Field(20, gt=0)
     driver_id: Optional[int] = None
 
+    # Validator: normaliza la placa (mayúsculas/trim) y valida el formato.
     @field_validator("plate")
     @classmethod
     def normalize_plate(cls, v: str) -> str:
@@ -27,6 +29,7 @@ class VehicleCreate(BaseModel):
 
 
 class VehicleUpdate(BaseModel):
+    """Edición parcial de un vehículo (capacidades, estado, conductor)."""
     plate: Optional[str] = None
     description: Optional[str] = None
     capacity_kg: Optional[float] = Field(default=None, gt=0)
@@ -35,6 +38,7 @@ class VehicleUpdate(BaseModel):
     is_active: Optional[bool] = None
     driver_id: Optional[int] = None
 
+    # Igual normalización de placa que en Create, tolerando valor nulo.
     @field_validator("plate")
     @classmethod
     def normalize_plate(cls, v: str | None) -> str | None:
@@ -49,6 +53,7 @@ class VehicleUpdate(BaseModel):
 
 
 class VehicleOut(BaseModel):
+    """Respuesta API de un vehículo."""
     id: int
     plate: str
     description: Optional[str]

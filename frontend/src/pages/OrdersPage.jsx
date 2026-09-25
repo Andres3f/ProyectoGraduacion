@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../services/api';
 
+// Normaliza los errores del backend (string, lista o códigos HTTP) a un mensaje legible.
 function getErrorMessage(err, fallback) {
   const detail = err?.response?.data?.detail;
   if (typeof detail === 'string') return detail;
@@ -13,6 +14,7 @@ function getErrorMessage(err, fallback) {
     : fallback;
 }
 
+/* Página de pedidos: lista, crea y sube pedidos por archivo (CSV/Excel). */
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
   const [clients, setClients] = useState([]);
@@ -20,6 +22,7 @@ export default function OrdersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Estado del formulario del nuevo pedido.
   const [form, setForm] = useState({
     client_id: '',
     weight_kg: '',
@@ -30,11 +33,13 @@ export default function OrdersPage() {
     notes: '',
   });
 
+  // Estado de la carga masiva de pedidos por archivo.
   const [uploadResult, setUploadResult] = useState(null);
   const [uploadErrors, setUploadErrors] = useState(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Obtiene los pedidos y clientes del backend.
   const loadData = () => {
     setLoading(true);
     api
@@ -48,8 +53,10 @@ export default function OrdersPage() {
       .catch(() => {});
   };
 
+  // Carga inicial de datos al montar la página.
   useEffect(loadData, []);
 
+  // Crea un nuevo pedido enviando el formulario al backend.
   const handleCreate = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -86,6 +93,7 @@ export default function OrdersPage() {
     }
   };
 
+  // Sube un archivo (CSV/Excel) para crear pedidos en lote.
   const handleUpload = async (file) => {
     if (!file) return;
     const formData = new FormData();
@@ -116,6 +124,7 @@ export default function OrdersPage() {
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">📦 Pedidos</h1>
+        {/* Acciones: cargar pedidos por archivo y crear pedido manual */}
         <div className="flex gap-3">
           <label className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl cursor-pointer transition">
             ⬆️ Cargar CSV
@@ -136,6 +145,7 @@ export default function OrdersPage() {
         </div>
       </div>
 
+      {/* Avisos de subida, resultado y errores del último intento */}
       {uploading && (
         <div className="mb-4 bg-blue-50 text-blue-700 text-sm rounded-lg p-3">
           Subiendo archivo...
@@ -163,6 +173,7 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {/* Modal de creación manual de un pedido */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
