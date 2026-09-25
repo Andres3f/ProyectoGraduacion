@@ -1,9 +1,11 @@
+import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from geoalchemy2.functions import ST_DWithin
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models.client import Client
 from app.models.order import Order
@@ -11,8 +13,11 @@ from app.models.user import User, RoleEnum
 from app.schemas.client import ClientCreate, ClientUpdate, ClientOut
 from app.auth.dependencies import get_current_user, require_role
 from app.services.geo import point_wkt
+from app.services.ors_client import geocode_address
 
 router = APIRouter(prefix="/api/clients", tags=["Clientes"])
+
+logger = logging.getLogger(__name__)
 
 
 # Consulta para cualquier usuario autenticado (lectura general).
@@ -54,6 +59,34 @@ def nearby_clients(
         ST_DWithin(Client.geom, point, radius_m)
     ).all()
     return query
+
+
+# Geocoding de una dirección escrita: devuelve candidatos con coordenadas para
+# que el planificador confirme visualmente en el mapa. Cualquier usuario
+# autenticado puede usarlo. IMPORTANTE: va definido ANTES de /{client_id}
+# para que "/geocode" no se intente parsear como un id numérico.
+@router.get("/geocode")
+def geocode_client_address(
+    q: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Convierte una dirección en candidatos con coordenadas (hasta 5)."""
+    if len(q.strip()) < 5:
+        raise HTTPException(
+            status_code=400,
+            detail="Escribe al menos 5 caracteres de la dirección",
+        )
+    # Foco de búsqueda: el depósito base (centro de Jalapa). Prioriza
+    # resultados del área operativa, clave para direcciones cortas/ambiguas.
+    focus = (settings.DEPOT_LAT, settings.DEPOT_LNG)
+    try:
+        results = geocode_address(q, focus_lat=focus[0], focus_lng=focus[1])
+    except Exception as exc:
+        # Si ORS y Nominatim fallan, no romper el formulario: respuesta vacía.
+        logger.warning("Geocoding falló por completo: %s", exc)
+        return {"results": []}
+    return {"results": results}
 
 
 # Alta de clientes: reservada a roles operativos (admin y planificador).
