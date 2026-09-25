@@ -6,16 +6,18 @@ import MapView, { ROUTE_COLORS, RouteStepsPanel } from '../components/MapView';
 export default function MapPage() {
   const [routes, setRoutes] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [depots, setDepots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [loadError, setLoadError] = useState(null);
 
-  // Carga en paralelo rutas y pedidos al montar la página.
+  // Carga en paralelo rutas, pedidos y depósitos al montar la página.
   useEffect(() => {
-    Promise.all([api.get('/routes/'), api.get('/orders/')])
-      .then(([routesRes, ordersRes]) => {
+    Promise.all([api.get('/routes/'), api.get('/orders/'), api.get('/depots/')])
+      .then(([routesRes, ordersRes, depotsRes]) => {
         setRoutes(routesRes.data);
         setOrders(ordersRes.data);
+        setDepots(depotsRes.data);
       })
       .catch((err) => {
         const detail = err?.response?.data?.detail;
@@ -96,7 +98,7 @@ export default function MapPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className={`${selected ? 'lg:col-span-2' : ''} bg-white rounded-2xl p-4 shadow-sm border border-gray-100`}>
             {/* Mapa con las rutas y panel de pasos de la ruta seleccionada */}
-            <MapView routes={enrichedRoutes} onSelectStop={handleSelectStop} />
+            <MapView routes={enrichedRoutes} depots={depots} onSelectStop={handleSelectStop} />
             <RouteStepsPanel route={selected?.route} />
             {/* Leyenda de colores por ruta */}
             <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500">

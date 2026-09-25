@@ -28,6 +28,13 @@ function numberedIcon(number, color) {
   });
 }
 
+// Ícono distintivo para los depósitos (punto de salida/regreso de las rutas).
+const DEPOT_ICON = L.divIcon({
+  className: '',
+  html: '<div style="background:#1f2937;color:white;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4);white-space:nowrap;">🏭 Depósito</div>',
+  iconAnchor: [8, 20],
+});
+
 // Normaliza las coordenadas de una parada a [lat, lng]
 // (soporta tanto `lat/lng` como `latitude/longitude`)
 function stopCoords(s) {
@@ -41,26 +48,38 @@ function stopCoordsWithin(s) {
 }
 
 // Ajusta automáticamente el encuadre del mapa para que todas las
-// paradas de las rutas queden visibles con un margen de 40px.
-function FitBounds({ routes }) {
+// paradas de las rutas y los depósitos queden visibles con un margen de 40px.
+function FitBounds({ routes, depots }) {
   const map = useMap();
-  const positions = routes.flatMap((r) => r.stops ?? []).flatMap(stopCoords);
-  const key = positions.join(',');
+  const bounds = [
+    ...routes.flatMap(
+      (r) =>
+        (r.stops ?? []).map(stopCoords).filter((c) => c.every(Number.isFinite))
+    ),
+    ...depots.map((d) => [d.latitude, d.longitude]),
+  ];
+  const key = bounds.flat().join(',');
   useEffect(() => {
-    if (positions.filter(Number.isFinite).length > 1) {
-      const bounds = routes
-        .flatMap((r) => r.stops ?? [])
-        .map(stopCoords)
-        .filter((c) => c.every(Number.isFinite));
+    if (bounds.length > 1) {
       map.fitBounds(bounds, { padding: [40, 40] });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, key]);
   return null;
 }
 
+// Resuelve el depósito de una ruta: el asignado (route.depot_id) o, si no
+// existe, el depósito predeterminado del sistema.
+function depotForRoute(route, depots) {
+  if (route?.depot_id) {
+    const found = depots.find((d) => d.id === route.depot_id);
+    if (found) return found;
+  }
+  return depots.find((d) => d.is_default) || null;
+}
+
 // Componente principal del mapa: dibuja rutas, paradas numeradas y pedidos sueltos.
-export default function MapView({ routes = [], markers = [], onSelectStop }) {
+export default function MapView({ routes = [], markers = [], depots = [], onSelectStop }) {
   const hasRouteStops = routes.some((r) => (r.stops?.length ?? 0) > 1);
 
   return (
@@ -75,7 +94,26 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {hasRouteStops && <FitBounds routes={routes} />}
+      {(hasRouteStops || depots.length > 0) && (
+        <FitBounds routes={routes} depots={depots} />
+      )}
+
+      {/* Depósitos: punto de partida de las rutas */}
+      {depots.map((d) => (
+        <Marker
+          key={`depot-${d.id}`}
+          position={[d.latitude, d.longitude]}
+          icon={DEPOT_ICON}
+        >
+          <Popup>
+            <strong>{d.name}</strong>
+            {d.is_default && (
+              <span className="block text-xs text-gray-500">predeterminado</span>
+            )}
+            {d.address && <p className="text-xs text-gray-500">{d.address}</p>}
+          </Popup>
+        </Marker>
+      ))}
 
       {/* Polilíneas por vehículo */}
       {routes.map((route, i) => {
@@ -98,11 +136,20 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
           );
         }
 
-        // Fallback: línea recta punteada entre paradas (aproximación).
+        // Fallback: línea recta punteada desde el depósito de la ruta, por
+        // cada parada y de regreso al depósito (aproximación).
+        const depot = depotForRoute(route, depots);
+        const depotPos = depot
+          ? [[depot.latitude, depot.longitude]]
+          : [];
         return (
           <Polyline
             key={`line-${route.id || i}`}
-            positions={validStops.map(stopCoords)}
+            positions={[
+              ...depotPos,
+              ...validStops.map(stopCoords),
+              ...depotPos,
+            ]}
             pathOptions={{
               color: COLORS[i % COLORS.length],
               weight: 4,

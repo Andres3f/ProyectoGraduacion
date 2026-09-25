@@ -15,7 +15,8 @@ tesis esto es suficiente y mucho más simple de desplegar.
 import math
 import logging
 from datetime import datetime, date, timedelta
-from typing import List
+from types import SimpleNamespace
+from typing import List, Optional
 
 from ortools.constraint_solver import routing_enums_pb2, pywrapcp
 
@@ -71,14 +72,20 @@ def _build_time_matrix(distance_matrix: List[List[int]]) -> List[List[int]]:
     return matrix
 
 
-def _depot():
-    # Punto de origen/retorno de todas las rutas (config. por defecto).
-    return {"lat": settings.DEPOT_LAT, "lng": settings.DEPOT_LNG}
-
-
 def _service_time_minutes(order) -> int:
     # Tiempo de descarga en cada parada (minutos) o 0 si no está definido.
     return int(order.service_time_min) if order.service_time_min else 0
+
+
+def _resolve_vehicle_depot(vehicle, default_depot):
+    """Devuelve el depósito del vehículo si tiene uno asignado, si no el
+    depósito predeterminado del sistema."""
+    depot_id = getattr(vehicle, "depot_id", None)
+    if depot_id:
+        depot = getattr(vehicle, "depot", None)
+        if depot:
+            return depot
+    return default_depot
 
 
 def _estimate_arrival_datetime(cumul_minutes: float) -> datetime:
@@ -90,19 +97,26 @@ def _estimate_arrival_datetime(cumul_minutes: float) -> datetime:
     return base + timedelta(minutes=int(cumul_minutes))
 
 
-def optimize_routes(orders: list, vehicles: list) -> dict:
+def optimize_routes(orders: list, vehicles: list, db=None) -> dict:
     """Optimiza la asignación de pedidos a varios vehículos (VRP con
-    capacidad y ventanas de tiempo).
+    capacidad y ventanas de tiempo), soportando múltiples depósitos.
+
+    Cada vehículo sale y regresa a su propio depósito: si tiene ``depot_id``
+    usa ese; si no, usa el depósito ``is_default`` del sistema. Con un solo
+    depósito (caso normal) el comportamiento es idéntico al original.
 
     Args:
         orders: lista de objetos Order (SQLAlchemy).
         vehicles: lista de objetos Vehicle disponibles (is_active).
+        db: Session SQLAlchemy para leer el depósito predeterminado. Si es
+            ``None`` (tests unitarios / compatibilidad) se usa la coordenada
+            de ``settings.DEPOT_LAT``/``DEPOT_LNG`` como único depósito.
 
     Returns:
         dict con:
           - success: bool
           - message: Optional[str]
-          - routes: list[dict], una por vehículo usado
+          - routes: list[dict], una por vehículo usado (incluye depot_id)
           - unassigned_order_ids: list[int] ordenes que no pudieron asignarse
     """
     num_vehicles = len(vehicles)
@@ -121,11 +135,44 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
             "unassigned_order_ids": [],
         }
 
-    depot = _depot()
-    # Nodo 0 = depósito; el resto son los pedidos en el orden recibido.
-    locations = [depot] + [
-        {"lat": o.latitude, "lng": o.longitude} for o in orders
-    ]
+    # ── Depósito(s) de salida ─────────────────────────────────
+    # Se lee el depósito predeterminado desde la BD; si no hay (o no se pasó
+    # db), se degrada a la coordenada de configuración (compatibilidad).
+    default_depot = None
+    if db is not None:
+        from app.models.depot import Depot
+        default_depot = db.query(Depot).filter(Depot.is_default == True).first()
+        if not default_depot:
+            return {
+                "success": False,
+                "message": "No hay un depósito predeterminado configurado.",
+                "routes": [],
+                "unassigned_order_ids": [o.id for o in orders],
+                "matrix_source": None,
+            }
+    if default_depot is None:
+        default_depot = SimpleNamespace(
+            id=None, latitude=settings.DEPOT_LAT, longitude=settings.DEPOT_LNG,
+        )
+
+    vehicle_depots = [_resolve_vehicle_depot(v, default_depot) for v in vehicles]
+
+    # Depósitos únicos usados (1 si todos comparten el mismo, varios si hay
+    # vehículos con depot_id distinto). Cada depósito es un nodo de inicio/fin.
+    unique_depots = []
+    depot_node_index = {}  # depot.id -> índice en `locations`
+    for d in vehicle_depots:
+        if d.id not in depot_node_index:
+            depot_node_index[d.id] = len(unique_depots)
+            unique_depots.append(d)
+
+    depot_locations = [{"lat": d.latitude, "lng": d.longitude} for d in unique_depots]
+    order_locations = [{"lat": o.latitude, "lng": o.longitude} for o in orders]
+    locations = depot_locations + order_locations
+    num_depots = len(unique_depots)
+
+    starts = [depot_node_index[vd.id] for vd in vehicle_depots]
+    ends = starts  # cada vehículo regresa a su mismo depósito de salida
 
     # ── Matriz de distancias/tiempos ────────────────────────────
     # Se intenta OpenRouteService (distancias reales por carretera); si falla
@@ -142,15 +189,16 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         matrix_source = "haversine"
 
     # Capacidad en kg de cada vehículo y demanda (peso) de cada pedido.
-    # La demanda del depósito se fija en 0.
+    # La demanda de cada depósito se fija en 0.
     vehicle_capacities = [
         int(v.capacity_kg) if v.capacity_kg else 0 for v in vehicles
     ]
-    demands = [0] + [int(o.weight_kg) for o in orders]  # kg, 0 para depósito
+    demands = [0] * num_depots + [int(o.weight_kg) for o in orders]
 
-    # Crea el índice y el modelo de enrutado (todos los vehículos salen del depósito, nodo 0).
+    # Crea el índice y el modelo de enrutado: cada vehículo sale de SU depósito
+    # (variante multi-depósito de OR-Tools con starts/ends por vehículo).
     manager = pywrapcp.RoutingIndexManager(
-        len(locations), num_vehicles, 0
+        len(locations), num_vehicles, starts, ends
     )
     routing = pywrapcp.RoutingModel(manager)
 
@@ -181,13 +229,13 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
 
     # ── Dimensión de tiempo (viaje + servicio) ─────────────────
     # Acumula tiempo de viaje más tiempo de descarga en cada parada.
-    service_times = [0] + [_service_time_minutes(o) for o in orders]
+    service_times = [0] * num_depots + [_service_time_minutes(o) for o in orders]
 
     def time_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
-        # El servicio se cuenta al llegar al nodo destino (el depósito no atiende).
-        service = service_times[to_node] if to_node > 0 else 0
+        # El servicio se cuenta al llegar al nodo destino (los depósitos no atienden).
+        service = service_times[to_node] if to_node >= num_depots else 0
         return time_matrix[from_node][to_node] + service
 
     time_callback_index = routing.RegisterTransitCallback(time_callback)
@@ -200,19 +248,20 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
     )
     time_dimension = routing.GetDimensionOrDie("Time")
 
-    # Ventana del depósito: salida flexible desde el inicio del día.
-    depot_index = manager.NodeToIndex(0)
-    time_dimension.CumulVar(depot_index).SetRange(0, settings.MAX_TIME_PER_VEHICLE_MIN)
+    # Ventana de cada depósito: salida flexible desde el inicio del día.
+    for depot_node in range(num_depots):
+        depot_index = manager.NodeToIndex(depot_node)
+        time_dimension.CumulVar(depot_index).SetRange(0, settings.MAX_TIME_PER_VEHICLE_MIN)
 
     # Ventanas de tiempo de cada pedido (minutos del día).
     for idx, order in enumerate(orders):
-        node_index = manager.NodeToIndex(idx + 1)  # depósito es el nodo 0
+        node_index = manager.NodeToIndex(num_depots + idx)
         tw_start = order.time_window_start
         tw_end = order.time_window_end
         if tw_start is not None and tw_end is not None:
             time_dimension.CumulVar(node_index).SetRange(int(tw_start), int(tw_end))
 
-    # Ventanas de tiempo del depósito para cada vehículo (start/end span).
+    # Ventanas de tiempo de inicio/fin para cada vehículo (start/end span).
     for vehicle_idx in range(num_vehicles):
         time_dimension.CumulVar(routing.Start(vehicle_idx)).SetRange(
             0, settings.MAX_TIME_PER_VEHICLE_MIN
@@ -226,7 +275,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
     # grande. Así, si un pedido excede capacidad, tiempo o ventana, no rompe
     # la ruta sino que se reporta como no asignado.
     big_number = int(sum(distance_matrix[i][j] for i in range(len(locations)) for j in range(len(locations)))) + 10000
-    for node in range(1, len(locations)):
+    for node in range(num_depots, len(locations)):
         routing.AddDisjunction([manager.NodeToIndex(node)], big_number)
 
     # ── Estrategia de búsqueda ─────────────────────────────────
@@ -254,19 +303,19 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
     for vehicle_idx in range(num_vehicles):
         index = routing.Start(vehicle_idx)
         stops = []
-        prev_node = 0  # depósito
+        prev_node = manager.IndexToNode(routing.Start(vehicle_idx))  # su depósito
         route_distance = 0
         route_weight = 0
 
-        # Avanza por la cadena de nodos del vehículo hasta volver al depósito.
+        # Avanza por la cadena de nodos del vehículo hasta volver a su depósito.
         while not routing.IsEnd(index):
             node = manager.IndexToNode(index)
             visited_node_indices.add(node)
             next_index = solution.Value(routing.NextVar(index))
             next_node = manager.IndexToNode(next_index)
 
-            if node > 0:  # pedido real (ignoramos el depósito)
-                order = orders[node - 1]
+            if node >= num_depots:  # pedido real (ignoramos los depósitos)
+                order = orders[node - num_depots]
                 # ETA estimada = hora de salida + minutos acumulados del solver.
                 arrival_min = solution.Value(time_dimension.CumulVar(index))
                 # Distancia del tramo anterior a este nodo (metros).
@@ -290,16 +339,17 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         if stops:
             routes.append({
                 "vehicle_id": vehicles[vehicle_idx].id,
+                "depot_id": vehicle_depots[vehicle_idx].id,
                 "stops": stops,
                 "total_distance_km": round(route_distance / 1000.0, 2),
                 "total_weight_kg": round(route_weight, 2),
             })
 
     # ── Pedidos no asignados ───────────────────────────────────
-    # Índice i+1 del nodo no visitado por ninguna ruta = pedido sin asignar.
+    # Índice num_depots+i del nodo no visitado por ninguna ruta = pedido sin asignar.
     unassigned = [
         o.id for i, o in enumerate(orders)
-        if (i + 1) not in visited_node_indices
+        if (num_depots + i) not in visited_node_indices
     ]
 
     return {

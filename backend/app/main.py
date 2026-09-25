@@ -12,8 +12,9 @@ from app.config import settings
 from app.database import engine, Base
 from app.routers import (
     auth, users, orders, vehicles, routes, route_stops, clients, dashboard, audit,
+    geocoding, depots,
 )
-from app.seed import create_initial_admin
+from app.seed import create_initial_admin, ensure_default_depot
 
 # Configuración básica de logging a consola.
 logging.basicConfig(level=logging.INFO)
@@ -33,12 +34,16 @@ async def lifespan(app: FastAPI):
     import app.models.route_stop  # noqa: F401
     import app.models.client  # noqa: F401
     import app.models.audit_log  # noqa: F401
+    import app.models.depot  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Tablas de la BD creadas / verificadas")
 
     # Crea el admin por defecto únicamente si no existe ninguno (idempotente).
     create_initial_admin()
+    # Crea el depósito predeterminado desde settings si aún no existe ninguno,
+    # para que el sistema nunca se quede sin punto de partida.
+    ensure_default_depot()
     yield
 
 
@@ -100,6 +105,8 @@ app.include_router(route_stops.router)
 app.include_router(clients.router)
 app.include_router(dashboard.router)
 app.include_router(audit.router)
+app.include_router(geocoding.router)
+app.include_router(depots.router)
 
 
 # Endpoint de salud para verificar que la API responde.

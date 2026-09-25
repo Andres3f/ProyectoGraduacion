@@ -13,26 +13,23 @@ function getErrorMessage(err) {
   return JSON.stringify(detail);
 }
 
-// Valores por defecto del formulario de cliente (creación/edición).
+// Valores por defecto del formulario de depósito (creación/edición).
 const EMPTY = {
   name: '',
   address: '',
-  zone: '',
   latitude: '',
   longitude: '',
 };
 
-// Icono del marcador de confirmación en el mapa (evita depender de las
-// imágenes por defecto de Leaflet, que requieren rutas/asset específicas).
+// Icono del marcador de confirmación en el mapa (estilo patio/almacén).
 const PIN_ICON = L.divIcon({
   className: '',
-  html: '<div style="width:26px;height:26px;border-radius:50%;background:#16a34a;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4);"></div>',
+  html: '<div style="width:26px;height:26px;border-radius:50%;background:#333;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-size:13px;">🏭</div>',
   iconSize: [26, 26],
   iconAnchor: [13, 13],
 });
 
-// Componente auxiliar: convierte un clic del usuario sobre el mapa en una
-// selección de coordenadas (mismo patrón visual de depósitos).
+// Componente auxiliar: un clic sobre el mapa mueve el marcador ahí.
 function MapClickPlacer({ onPick }) {
   useMapEvents({
     click: (e) => onPick(e.latlng.lat, e.latlng.lng),
@@ -40,10 +37,11 @@ function MapClickPlacer({ onPick }) {
   return null;
 }
 
-/* Página de gestión de clientes: lista, crea, edita y elimina clientes. */
-export default function ClientsPage() {
-  // Lista de clientes y estados de carga/error.
-  const [clients, setClients] = useState([]);
+/* Página de gestión de depósitos (punto de partida de los camiones).
+   Solo Admin: fija el punto de partida haciendo clic en el mapa. */
+export default function DepotsPage() {
+  // Lista de depósitos y estados de carga/error.
+  const [depots, setDepots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -58,38 +56,37 @@ export default function ClientsPage() {
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  // Obtiene la lista de clientes desde el backend.
+  // Obtiene la lista de depósitos desde el backend.
   const loadData = () => {
     setLoading(true);
     api
-      .get('/clients/')
-      .then((res) => setClients(res.data))
+      .get('/depots/')
+      .then((res) => setDepots(res.data))
       .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setLoading(false));
   };
 
-  // Carga inicial de la lista de clientes al montar el componente.
+  // Carga inicial de la lista de depósitos al montar el componente.
   useEffect(loadData, []);
 
-  // Abre el formulario en modo creación con el cliente vacío.
+  // Abre el formulario en modo creación con el depósito vacío.
   const openCreate = () => {
     setEditing(null);
-    setForm({ ...EMPTY, latitude: '', longitude: '' });
+    setForm({ ...EMPTY });
     setGeocodeResults([]);
     setSearched(false);
     setError(null);
     setShowForm(true);
   };
 
-  // Abre el formulario en modo edición precargando los datos del cliente.
-  const openEdit = (c) => {
-    setEditing(c);
+  // Abre el formulario en modo edición precargando los datos del depósito.
+  const openEdit = (d) => {
+    setEditing(d);
     setForm({
-      name: c.name,
-      address: c.address,
-      zone: c.zone || '',
-      latitude: c.latitude,
-      longitude: c.longitude,
+      name: d.name,
+      address: d.address || '',
+      latitude: d.latitude,
+      longitude: d.longitude,
     });
     setGeocodeResults([]);
     setSearched(false);
@@ -125,23 +122,22 @@ export default function ClientsPage() {
   const pickCoords = (lat, lng) =>
     setForm((f) => ({ ...f, latitude: lat, longitude: lng }));
 
-  // Envía el formulario: crea o actualiza el cliente según el modo actual.
+  // Envía el formulario: crea o actualiza el depósito según el modo actual.
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     setError(null);
     const payload = {
       name: form.name,
-      address: form.address,
-      zone: form.zone || null,
+      address: form.address || null,
       latitude: Number(form.latitude),
       longitude: Number(form.longitude),
     };
     try {
       if (editing) {
-        await api.put(`/clients/${editing.id}`, payload);
+        await api.put(`/depots/${editing.id}`, payload);
       } else {
-        await api.post('/clients/', payload);
+        await api.post('/depots/', payload);
       }
       setShowForm(false);
       loadData();
@@ -152,12 +148,23 @@ export default function ClientsPage() {
     }
   };
 
-  // Elimina el cliente tras confirmación del usuario.
-  const handleDelete = async (c) => {
-    if (!window.confirm(`¿Eliminar el cliente ${c.name}?`)) return;
+  // Marca un depósito como predeterminado (único).
+  const handleSetDefault = async (d) => {
     setError(null);
     try {
-      await api.delete(`/clients/${c.id}`);
+      await api.put(`/depots/${d.id}/set-default`);
+      loadData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  };
+
+  // Elimina el depósito tras confirmación del usuario.
+  const handleDelete = async (d) => {
+    if (!window.confirm(`¿Eliminar el depósito ${d.name}?`)) return;
+    setError(null);
+    try {
+      await api.delete(`/depots/${d.id}`);
       loadData();
     } catch (err) {
       setError(getErrorMessage(err));
@@ -167,13 +174,18 @@ export default function ClientsPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">👥 Clientes</h1>
-        {/* Botón para registrar un nuevo cliente */}
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">🏭 Depósitos</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Punto de partida de los camiones para las rutas de reparto.
+          </p>
+        </div>
+        {/* Botón para registrar un nuevo depósito */}
         <button
           onClick={openCreate}
           className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-xl transition shadow"
         >
-          + Nuevo cliente
+          + Nuevo depósito
         </button>
       </div>
 
@@ -185,11 +197,11 @@ export default function ClientsPage() {
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          {/* Modal con el formulario de creación/edición de cliente */}
+          {/* Modal con el formulario de creación/edición de depósito */}
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">
-                {editing ? 'Editar cliente' : 'Nuevo cliente'}
+                {editing ? 'Editar depósito' : 'Nuevo depósito'}
               </h2>
               <button
                 onClick={() => setShowForm(false)}
@@ -208,17 +220,16 @@ export default function ClientsPage() {
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                  placeholder="Nombre del cliente"
+                  placeholder="Ej. Patio Principal Jalapa"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Dirección *
+                  Dirección
                 </label>
                 {/* Dirección + botón de geocoding para obtener coordenadas */}
                 <div className="flex gap-2">
                   <input
-                    required
                     value={form.address}
                     onChange={(e) => {
                       setForm({ ...form, address: e.target.value });
@@ -227,7 +238,7 @@ export default function ClientsPage() {
                       setSearched(false);
                     }}
                     className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                    placeholder="5ta Calle 2-30 Zona 1"
+                    placeholder="1 Avenida 9-28, Zona 1, Jalapa"
                   />
                   <button
                     type="button"
@@ -268,22 +279,11 @@ export default function ClientsPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Zona
-                </label>
-                <input
-                  value={form.zone}
-                  onChange={(e) => setForm({ ...form, zone: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                  placeholder="Ej. Centro, San José"
-                />
-              </div>
-              <div>
                 {/* Mapa de confirmación: SIEMPRE visible en el formulario. El
                     usuario confirma (clic/arrastrar) antes de poder guardar. */}
                 <div className="mt-1">
                   <p className="block text-sm font-medium text-gray-700 mb-1">
-                    Punto de entrega *
+                    Ubicación del depósito *
                   </p>
                   <MapContainer
                     center={
@@ -360,7 +360,7 @@ export default function ClientsPage() {
                 </button>
                 <button
                   type="submit"
-                  // Obliga a buscar/confirmar la ubicación en el mapa antes de guardar.
+                  // Obliga a fijar/confirmar la ubicación en el mapa antes de guardar.
                   disabled={!form.latitude || !form.longitude || saving}
                   className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition shadow"
                 >
@@ -373,46 +373,62 @@ export default function ClientsPage() {
       )}
 
       {loading ? (
-        /* Indicador de carga mientras se obtienen los clientes */
+        /* Indicador de carga mientras se obtienen los depósitos */
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-brand-500 border-t-transparent" />
         </div>
-      ) : clients.length === 0 ? (
+      ) : depots.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
-          No hay clientes registrados
+          No hay depósitos registrados
         </div>
       ) : (
-        /* Tabla con la lista de clientes y sus acciones Editar/Eliminar */
+        /* Tabla con la lista de depósitos y sus acciones */
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
               <tr>
                 <th className="px-6 py-3 text-left">Nombre</th>
                 <th className="px-6 py-3 text-left">Dirección</th>
-                <th className="px-6 py-3 text-left">Zona</th>
                 <th className="px-6 py-3 text-right">Lat</th>
                 <th className="px-6 py-3 text-right">Lng</th>
                 <th className="px-6 py-3 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {clients.map((c) => (
-                <tr key={c.id} className="hover:bg-gray-50 transition">
-                  <td className="px-6 py-4 font-medium">{c.name}</td>
-                  <td className="px-6 py-4 text-gray-500">{c.address}</td>
-                  <td className="px-6 py-4">{c.zone || '—'}</td>
-                  <td className="px-6 py-4 text-right">{c.latitude}</td>
-                  <td className="px-6 py-4 text-right">{c.longitude}</td>
-                  {/* Acciones por fila: editar y eliminar */}
+              {depots.map((d) => (
+                <tr
+                  key={d.id}
+                  className={`hover:bg-gray-50 transition ${
+                    d.is_default ? 'bg-brand-50/50' : ''
+                  }`}
+                >
+                  <td className="px-6 py-4 font-medium">
+                    {d.name}
+                    {d.is_default && (
+                      <span className="ml-2 inline-block px-2 py-0.5 rounded-full bg-brand-600 text-white text-xs font-semibold">
+                        Predeterminado
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-gray-500">{d.address || '—'}</td>
+                  <td className="px-6 py-4 text-right">{d.latitude}</td>
+                  <td className="px-6 py-4 text-right">{d.longitude}</td>
                   <td className="px-6 py-4 text-right space-x-2">
                     <button
-                      onClick={() => openEdit(c)}
+                      onClick={() => handleSetDefault(d)}
+                      disabled={d.is_default}
+                      className="text-brand-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Usar como predeterminado
+                    </button>
+                    <button
+                      onClick={() => openEdit(d)}
                       className="text-brand-600 hover:underline"
                     >
                       Editar
                     </button>
                     <button
-                      onClick={() => handleDelete(c)}
+                      onClick={() => handleDelete(d)}
                       className="text-red-500 hover:underline"
                     >
                       Eliminar

@@ -11,6 +11,7 @@ from app.models.route import Route, RouteStatus
 from app.models.route_stop import RouteStop
 from app.models.order import Order, OrderStatus
 from app.models.vehicle import Vehicle
+from app.models.depot import Depot
 from app.models.user import User, RoleEnum
 from app.schemas.route import (
     RouteOut, OptimizeRequest, OptimizeResponse, AssignDriverRequest,
@@ -166,7 +167,7 @@ def create_optimized_route(
     orders = _load_orders(db, req.order_ids)
     vehicles = _load_vehicles(db, req.vehicle_ids)
 
-    result = optimize_routes(orders, vehicles)
+    result = optimize_routes(orders, vehicles, db)
 
     # Si no hubo asignación posible, se responde con los pedidos sin asignar.
     if not result["success"]:
@@ -199,6 +200,7 @@ def create_optimized_route(
             name=f"Ruta-{route_number_base + idx + 1}",
             vehicle_id=route_data["vehicle_id"],
             driver_id=vehicle.driver_id,
+            depot_id=route_data.get("depot_id"),
             stops_snapshot=_json_safe_stops(route_data["stops"]),
             total_distance_km=route_data["total_distance_km"],
             total_weight_kg=route_data["total_weight_kg"],
@@ -225,7 +227,16 @@ def create_optimized_route(
         # Geometría real por calle (ORS): si falla, la ruta se crea igual y el
         # mapa dibuja línea recta como respaldo. Nunca rompemos la creación.
         try:
-            coords = [{"lat": settings.DEPOT_LAT, "lng": settings.DEPOT_LNG}] + [
+            # Cada ruta arranca desde SU depósito (el del vehículo o el default).
+            depot = (
+                db.get(Depot, route_data["depot_id"])
+                if route_data.get("depot_id") else None
+            )
+            depot_coords = {
+                "lat": depot.latitude if depot else settings.DEPOT_LAT,
+                "lng": depot.longitude if depot else settings.DEPOT_LNG,
+            }
+            coords = [depot_coords] + [
                 {"lat": s["lat"], "lng": s["lng"]} for s in route_data["stops"]
             ]
             geo = get_route_geometry(coords)

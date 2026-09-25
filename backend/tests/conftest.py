@@ -32,9 +32,10 @@ import app.models.vehicle  # noqa: E402,F401
 import app.models.route  # noqa: E402,F401
 import app.models.route_stop  # noqa: E402,F401
 import app.models.audit_log  # noqa: E402,F401
+import app.models.depot  # noqa: E402,F401
 
 from app.main import app  # noqa: E402
-from app.seed import create_initial_admin  # noqa: E402
+from app.seed import create_initial_admin, ensure_default_depot  # noqa: E402
 
 ADMIN_EMAIL = "admin@optirutas.com"
 ADMIN_PASSWORD = "Admin123!"
@@ -55,6 +56,7 @@ def _reset_db():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     create_initial_admin()
+    ensure_default_depot()
     yield
 
 

@@ -19,12 +19,14 @@ const EMPTY = {
   status: 'disponible',
   is_active: true,
   driver_id: '',
+  depot_id: '',
 };
 
 /* Página de vehículos: lista, crea, edita y elimina la flota. */
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
+  const [depots, setDepots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -46,6 +48,7 @@ export default function VehiclesPage() {
       .get('/users/')
       .then((res) => setDrivers(res.data.filter((u) => u.role === 'conductor')))
       .catch(() => {});
+    api.get('/depots/').then((res) => setDepots(res.data)).catch(() => {});
   };
 
   useEffect(loadData, []);
@@ -67,6 +70,7 @@ export default function VehiclesPage() {
       status: v.status,
       is_active: v.is_active,
       driver_id: v.driver_id ?? '',
+      depot_id: v.depot_id ?? '',
     });
     setError(null);
     setShowForm(true);
@@ -82,6 +86,7 @@ export default function VehiclesPage() {
       capacity_kg: Number(form.capacity_kg),
       capacity_m3: Number(form.capacity_m3 || 0),
       driver_id: form.driver_id ? Number(form.driver_id) : null,
+      depot_id: form.depot_id ? Number(form.depot_id) : null,
     };
     try {
       if (editing) {
@@ -226,6 +231,26 @@ export default function VehiclesPage() {
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Depósito de salida
+                </label>
+                <select
+                  value={form.depot_id}
+                  onChange={(e) =>
+                    setForm({ ...form, depot_id: e.target.value })
+                  }
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                >
+                  <option value="">Usar el depósito predeterminado</option>
+                  {depots.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                      {d.is_default ? ' (predeterminado)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
               {editing && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -303,6 +328,7 @@ export default function VehiclesPage() {
                 <th className="px-6 py-3 text-left">Descripción</th>
                 <th className="px-6 py-3 text-right">Capacidad</th>
                 <th className="px-6 py-3 text-left">Conductor</th>
+                <th className="px-6 py-3 text-left">Depósito</th>
                 <th className="px-6 py-3 text-center">Estado</th>
                 <th className="px-6 py-3 text-center">Activo</th>
                 <th className="px-6 py-3 text-right">Acciones</th>
@@ -319,6 +345,9 @@ export default function VehiclesPage() {
                     {v.capacity_kg} kg
                   </td>
                   <td className="px-6 py-4">{driverName(v.driver_id)}</td>
+                  <td className="px-6 py-4">
+                    {depots.find((d) => d.id === v.depot_id)?.name || 'Por defecto'}
+                  </td>
                   <td className="px-6 py-4 text-center">
                     <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-brand-100 text-brand-700">
                       {v.status}

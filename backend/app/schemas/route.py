@@ -39,6 +39,7 @@ class RouteOut(BaseModel):
     name: Optional[str]
     vehicle_id: Optional[int]
     driver_id: Optional[int]
+    depot_id: Optional[int] = None
     stops: List[RouteStopOut] = []
     route_geometry: Optional[dict] = None
     steps: Optional[List[dict]] = None

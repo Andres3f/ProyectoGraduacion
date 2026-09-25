@@ -26,6 +26,9 @@ class Route(Base):
     # Vehículo y conductor asignados a esta ruta.
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Depósito desde el que salió realmente esta ruta (para dibujo en mapa y
+    # reportes históricos aunque luego cambie el depósito por defecto).
+    depot_id = Column(Integer, ForeignKey("depots.id"), nullable=True)
     # Snapshot JSON de las paradas (orden de order_ids). Se conserva un sprint
     # más por compatibilidad con el frontend viejo; se eliminará en Sprint 4
     # cuando el frontend lea exclusivamente de la relación `stops`.

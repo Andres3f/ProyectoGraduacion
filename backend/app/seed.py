@@ -27,7 +27,9 @@ from app.models.vehicle import Vehicle
 from app.models.order import Order, OrderStatus
 from app.models.route import Route, RouteStatus
 from app.models.route_stop import RouteStop
+from app.models.depot import Depot
 from app.auth.passwords import hash_password
+from app.config import settings
 from app.services.geo import point_wkt
 from app.services.optimizer import optimize_routes
 
@@ -138,7 +140,10 @@ def _persist_route(db: Session, vehicle, route_data, route_index: int) -> Route:
         name=f"Ruta-{route_index + 1}",
         vehicle_id=vehicle.id,
         driver_id=vehicle.driver_id,
+        depot_id=route_data.get("depot_id"),
         total_distance_km=route_data["total_distance_km"],
+        total_duration_min=route_data.get("total_duration_min"),
+        distance_source=route_data.get("distance_source", "haversine"),
         total_weight_kg=route_data["total_weight_kg"],
         status=RouteStatus.planificada,
         optimized_at=datetime.now(),
@@ -195,6 +200,47 @@ def create_initial_admin() -> None:
         db.close()
 
 
+def ensure_default_depot() -> Depot:
+    """Garantiza que exista un depósito predeterminado (idempotente).
+
+    Si no hay ningún depósito, crea uno desde los valores de
+    ``settings.DEPOT_LAT``/``DEPOT_LNG`` (el punto de partida que se usaba como
+    variable de entorno). Se llama al arrancar la app para que el sistema
+    nunca se quede sin punto de partida.
+    """
+    db: Session = SessionLocal()
+    try:
+        depot = db.query(Depot).filter(Depot.is_default == True).first()
+        if depot:
+            return depot
+        existing = db.query(Depot).first()
+        if existing is None:
+            depot = Depot(
+                name="Patio Principal Jalapa",
+                address="Centro, Jalapa",
+                latitude=settings.DEPOT_LAT,
+                longitude=settings.DEPOT_LNG,
+                geom=point_wkt(settings.DEPOT_LNG, settings.DEPOT_LAT),
+                is_default=True,
+            )
+            db.add(depot)
+            db.commit()
+            db.refresh(depot)
+            logger.info("🏭 Depósito predeterminado creado: %s", depot.name)
+            return depot
+        # Ya existen depósitos pero ninguno es default: marca el primero.
+        existing = db.query(Depot).first()
+        existing.is_default = True
+        db.commit()
+        return existing
+    except Exception as e:
+        db.rollback()
+        logger.warning("⚠️ No se pudo garantizar el depósito predeterminado: %s", e)
+        return None
+    finally:
+        db.close()
+
+
 def seed_demo_data() -> dict:
     """Genera (idempotente) los datos de demostración completos.
 
@@ -203,8 +249,24 @@ def seed_demo_data() -> dict:
         repetidas): usuarios, clientes, vehículos, pedidos y rutas creados.
     """
     db: Session = SessionLocal()
-    created = {"users": 0, "clients": 0, "vehicles": 0, "orders": 0, "routes": 0}
+    created = {"users": 0, "depots": 0, "clients": 0, "vehicles": 0, "orders": 0, "routes": 0}
     try:
+        # ── Depósito predeterminado (punto de partida) ───────
+        # Se crea explícitamente para que los vehículos sin depot_id salgan del
+        # patio principal; idempotente por nombre.
+        existing_depot = db.query(Depot).filter(Depot.name == "Patio Principal Jalapa").first()
+        if not existing_depot:
+            db.add(Depot(
+                name="Patio Principal Jalapa",
+                address="Centro, Jalapa",
+                latitude=settings.DEPOT_LAT,
+                longitude=settings.DEPOT_LNG,
+                geom=point_wkt(settings.DEPOT_LNG, settings.DEPOT_LAT),
+                is_default=True,
+            ))
+            db.flush()
+            created["depots"] += 1
+
         # ── Usuarios por rol ─────────────────────────────────
         driver = None
         for email, name, pwd, role in USERS:
@@ -285,7 +347,7 @@ def seed_demo_data() -> dict:
                 if not subset:
                     break
                 veh = random.choice(vehicles)
-                result = optimize_routes(subset, [veh])
+                result = optimize_routes(subset, [veh], db)
                 # Si el solver no obtuvo solución factible, se omite el grupo.
                 if not result["success"] or not result["routes"]:
                     continue
