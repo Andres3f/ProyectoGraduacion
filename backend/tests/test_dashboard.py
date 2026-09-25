@@ -159,6 +159,67 @@ def test_kpis_requires_gerente_or_admin(client, admin_headers):
     assert resp.status_code == 403
 
 
+# ── Resumen del día (panel del planificador/admin) ────────────
+
+
+def test_summary_counts_day_activity(client, admin_headers):
+    """Pedidos, rutas activas y vehículo cuentan; la entrega incrementa."""
+    route = _setup_route(client, admin_headers)
+    stop_id = route["stops"][0]["id"]
+
+    # Antes de entregar: el pedido de hoy existe, la ruta está planificada
+    # (activa) y el vehículo está dado de alta; aun no hay entregas de hoy.
+    resp = client.get("/api/dashboard/summary", headers=admin_headers)
+    assert resp.status_code == 200
+    s = resp.json()
+    assert s == {
+        "pedidos_hoy": 1,
+        "rutas_activas": 1,
+        "vehiculos": 1,
+        "entregas_hoy": 0,
+    }
+
+    # El conductor marca la parada como entregada → sube el contador del día.
+    # Usa func.now() (como el endpoint real) para que la fecha SQL coincida.
+    db = SessionLocal()
+    try:
+        from sqlalchemy import func
+        from app.models.route_stop import RouteStop
+        stop = db.get(RouteStop, stop_id)
+        stop.status = "entregado"
+        stop.delivered_at = func.now()
+        db.commit()
+    finally:
+        db.close()
+
+    resp = client.get("/api/dashboard/summary", headers=admin_headers)
+    assert resp.json()["entregas_hoy"] == 1
+    assert resp.json()["rutas_activas"] == 1  # planificada => sigue activa
+
+
+def test_summary_empty_db_returns_zeros(client, admin_headers):
+    """Sin datos, el resumen devuelve ceros sin errores."""
+    resp = client.get("/api/dashboard/summary", headers=admin_headers)
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "pedidos_hoy": 0,
+        "rutas_activas": 0,
+        "vehiculos": 0,
+        "entregas_hoy": 0,
+    }
+
+
+def test_summary_allows_planner_rejects_conductor(
+    client, admin_headers, planner_headers, conductor_headers
+):
+    # El planificador (dashboard principal) sí accede...
+    resp = client.get("/api/dashboard/summary", headers=planner_headers)
+    assert resp.status_code == 200
+    # ...pero un conductor no debe ver KPIs operativos.
+    resp = client.get("/api/dashboard/summary", headers=conductor_headers)
+    assert resp.status_code == 403
+
+
 # ── PG-23: serie temporal (línea) ────────────────────────────
 
 

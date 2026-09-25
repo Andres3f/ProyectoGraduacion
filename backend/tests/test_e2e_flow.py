@@ -246,9 +246,10 @@ def test_full_e2e_delivery_flow(client, admin_headers):
     my_route = client.get("/api/routes/my-route", headers=driver_headers)
     assert my_route.status_code == 200
     assert {s["order_id"] for s in my_route.json()["stops"]} == {o1, o2}
+    stop_a = my_route.json()["stops"][0]
+    stop_b_order_id = my_route.json()["stops"][1]["order_id"]
 
     # Marca la primera parada como entregada → status/delivered_at actualizado.
-    stop_a = my_route.json()["stops"][0]
     resp = client.put(
         f"/api/route-stops/{stop_a['id']}/status",
         params={"status": "entregado"},
@@ -258,10 +259,17 @@ def test_full_e2e_delivery_flow(client, admin_headers):
 
     db = SessionLocal()
     try:
+        from app.models.order import Order, OrderStatus
         from app.models.route_stop import RouteStop
         updated = db.get(RouteStop, stop_a["id"])
         assert updated.status == "entregado"
         assert updated.delivered_at is not None
+        # El estado del pedido se sincroniza: ya no queda "en_ruta".
+        delivered = db.get(Order, stop_a["order_id"])
+        assert delivered.status == OrderStatus.entregado
+        # El pedido aún no entregado sigue "en_ruta".
+        pending = db.get(Order, stop_b_order_id)
+        assert pending.status == OrderStatus.en_ruta
     finally:
         db.close()
 
@@ -283,3 +291,30 @@ def test_full_e2e_delivery_flow(client, admin_headers):
     # en_progreso/planificada), así que el admin la consulta directamente.
     completed = client.get(f"/api/routes/{route_id}", headers=admin_headers).json()
     assert completed["status"] == "completada"
+
+
+def test_mark_fallido_propagates_to_order(client, admin_headers):
+    """Una parada 'fallido' deja el pedido en 'fallido' y el otro sigue en ruta."""
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "failprop")
+    v1, o1, o2 = _full_setup(client, admin_headers, driver_id, "failprop")
+    body = _optimize(client, admin_headers, [o1, o2], v1)
+    stop = body["routes"][0]["stops"][0]
+    other_order = o1 if stop["order_id"] == o2 else o2
+
+    resp = client.put(
+        f"/api/route-stops/{stop['id']}/status",
+        params={"status": "fallido"},
+        headers=driver_headers,
+    )
+    assert resp.status_code == 200
+
+    db = SessionLocal()
+    try:
+        from app.models.order import Order, OrderStatus
+        failed = db.get(Order, stop["order_id"])
+        assert failed.status == OrderStatus.fallido
+        # El otro pedido sigue asignado (en ruta), se entrega aparte.
+        other = db.get(Order, other_order)
+        assert other.status == OrderStatus.en_ruta
+    finally:
+        db.close()
