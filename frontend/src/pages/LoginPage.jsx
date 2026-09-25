@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 
+/* Página de inicio de sesión: valida credenciales contra el backend. */
 export default function LoginPage() {
   const { login } = useAuth();
+  // Estado de los campos del formulario y de la operación de login.
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Envía las credenciales al autenticar y muestra error si falla.
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -29,6 +32,7 @@ export default function LoginPage() {
           <p className="text-gray-500 mt-1">Jalapa · Optimización de rutas de cemento</p>
         </div>
 
+        {/* Mensaje de error si el login falla */}
         {error && (
           <div className="bg-red-50 text-red-600 text-sm rounded-lg p-3 mb-4">
             {error}
@@ -36,6 +40,7 @@ export default function LoginPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Campo de correo electrónico */}
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
               Correo electrónico
@@ -50,6 +55,7 @@ export default function LoginPage() {
               placeholder="tu@email.com"
             />
           </div>
+          {/* Campo de contraseña */}
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
               Contraseña
@@ -64,6 +70,7 @@ export default function LoginPage() {
               placeholder="••••••••"
             />
           </div>
+          {/* Botón de envío; deshabilitado mientras se intenta iniciar sesión */}
           <button
             type="submit"
             disabled={loading}

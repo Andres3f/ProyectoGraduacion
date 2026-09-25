@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
 
 
+# Configuración central de la app, cargada desde variables de entorno o .env
+# (pydantic-settings). Cada campo tiene un valor por defecto seguro para desarrollo.
 class Settings(BaseSettings):
     # ── Base de datos ──────────────────────────────────────────
     DATABASE_URL: str = (
@@ -65,4 +67,5 @@ class Settings(BaseSettings):
         extra = "ignore"
 
 
+# Instancia única de configuración compartida por toda la aplicación.
 settings = Settings()

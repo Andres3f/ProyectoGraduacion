@@ -14,6 +14,8 @@ from app.services.geo import point_wkt
 router = APIRouter(prefix="/api/orders", tags=["Pedidos"])
 
 
+# Normaliza datos del cliente dentro del pedido: se copian nombre, dirección y
+# coordenadas (más la geometría PostGIS) para preservarlos aunque el cliente cambie.
 def _snapshot_from_client(client: Client) -> dict:
     """Construye el snapshot denormalizado de un pedido a partir de su cliente."""
     return {
@@ -25,6 +27,7 @@ def _snapshot_from_client(client: Client) -> dict:
     }
 
 
+# Validación compartida por create/update: el cliente referenciado debe existir.
 def _get_client_or_400(db: Session, client_id: int) -> Client:
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -32,6 +35,7 @@ def _get_client_or_400(db: Session, client_id: int) -> Client:
     return client
 
 
+# Consulta general de pedidos para cualquier usuario autenticado.
 @router.get("/", response_model=List[OrderOut])
 @router.get("", response_model=List[OrderOut], include_in_schema=False)
 def list_orders(
@@ -42,6 +46,7 @@ def list_orders(
     return db.query(Order).all()
 
 
+# Alta de pedido: captura el snapshot del cliente en el momento de la creación.
 @router.post("/", response_model=OrderOut)
 def create_order(
     order_in: OrderCreate,
@@ -52,6 +57,7 @@ def create_order(
 ):
     """Crear pedido (admin y planificador)."""
     client = _get_client_or_400(db, order_in.client_id)
+    # El pedido guarda una copia del cliente (snapshot) y su autor.
     order = Order(
         **order_in.model_dump(),
         **_snapshot_from_client(client),
@@ -63,6 +69,8 @@ def create_order(
     return order
 
 
+# Importación masiva: lee CSV/Excel, valida cada fila y crea los pedidos en
+# una única transacción (todo o nada) si no hay errores.
 @router.post("/upload")
 async def upload_orders(
     file: UploadFile = File(...),
@@ -82,6 +90,7 @@ async def upload_orders(
     import pandas as pd
     from io import BytesIO
 
+    # Lee el contenido en un DataFrame, según la extensión del archivo.
     content = await file.read()
     filename = (file.filename or "").lower()
     if filename.endswith(".csv"):
@@ -93,6 +102,7 @@ async def upload_orders(
             status_code=400, detail="Formato no soportado (usa .csv o .xlsx)"
         )
 
+    # Valida que el archivo incluya las columnas obligatorias del formato.
     required_cols = {"client_id", "weight_kg", "volume_m3"}
     missing = required_cols - set(df.columns)
     if missing:
@@ -100,6 +110,8 @@ async def upload_orders(
             status_code=400, detail=f"Faltan columnas: {sorted(missing)}"
         )
 
+    # Recorre fila por fila acumulando los pedidos válidos y los errores
+    # de cada fila; si hay cualquier error no se crea nada.
     errors = []
     valid_orders = []
     for idx, row in df.iterrows():
@@ -111,12 +123,14 @@ async def upload_orders(
             continue
         weight = row["weight_kg"]
         volume = row.get("volume_m3", 0)
+        # Rechaza celdas vacías o pesos no positivos.
         if isinstance(weight, float) and math.isnan(weight):
             errors.append(f"Fila {row_num}: weight_kg es requerido")
             continue
         if weight <= 0:
             errors.append(f"Fila {row_num}: weight_kg debe ser > 0")
             continue
+        # Normaliza volumen vacío a 0 y rechaza negativos.
         if isinstance(volume, float) and math.isnan(volume):
             volume = 0
         if volume < 0:
@@ -140,6 +154,7 @@ async def upload_orders(
     db.commit()
     from app.services.audit import log_action
 
+    # Deja constancia de la carga masiva y su resultado en auditoría.
     log_action(
         db, current_user.id, "carga_masiva_pedidos",
         entidad="order", detalle={"creados": len(valid_orders), "errores": len(errors)},
@@ -148,6 +163,7 @@ async def upload_orders(
     return {"created": len(valid_orders)}
 
 
+# Detalle de un pedido por id; cualquier usuario autenticado puede consultarlo.
 @router.get("/{order_id}", response_model=OrderOut)
 def get_order(
     order_id: int,
@@ -160,6 +176,7 @@ def get_order(
     return order
 
 
+# Actualización de pedido: si se cambia de cliente, se refresca el snapshot.
 @router.put("/{order_id}", response_model=OrderOut)
 def update_order(
     order_id: int,
@@ -175,6 +192,7 @@ def update_order(
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
     data = order_in.model_dump(exclude_unset=True)
     client_id = data.get("client_id")
+    # Si el cliente cambió, se re-snapshotean sus datos para mantener coherencia.
     if client_id is not None and client_id != order.client_id:
         client = _get_client_or_400(db, client_id)
         data.update(_snapshot_from_client(client))
@@ -185,6 +203,7 @@ def update_order(
     return order
 
 
+# Baja de pedido: solo admin.
 @router.delete("/{order_id}")
 def delete_order(
     order_id: int,

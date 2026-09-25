@@ -12,6 +12,8 @@ from app.auth.dependencies import get_current_user, require_role
 router = APIRouter(prefix="/api/vehicles", tags=["Vehículos"])
 
 
+# Validación transversal: comprueba que el driver asignado exista y sea rol
+# conductor. Usada tanto en creación como en actualización de vehículos.
 def _validate_driver(db: Session, driver_id: int | None) -> None:
     """Verifica que driver_id exista y tenga rol conductor (si se envía)."""
     if driver_id is None:
@@ -26,6 +28,7 @@ def _validate_driver(db: Session, driver_id: int | None) -> None:
         )
 
 
+# Flota de vehículos: consulta abierta a cualquier usuario autenticado.
 @router.get("/", response_model=List[VehicleOut])
 @router.get("", response_model=List[VehicleOut], include_in_schema=False)
 def list_vehicles(
@@ -35,6 +38,7 @@ def list_vehicles(
     return db.query(Vehicle).all()
 
 
+# Alta de vehículo: reservada a roles operativos; audita la creación.
 @router.post("/", response_model=VehicleOut)
 def create_vehicle(
     vehicle_in: VehicleCreate,
@@ -48,6 +52,7 @@ def create_vehicle(
     db.refresh(vehicle)
     from app.services.audit import log_action
 
+    # Deja constancia de la placa del vehículo creado en el log de auditoría.
     log_action(
         db, current_user.id, "crear_vehiculo",
         entidad="vehicle", entidad_id=vehicle.id,
@@ -57,6 +62,7 @@ def create_vehicle(
     return vehicle
 
 
+# Detalle de vehículo: cualquier usuario autenticado puede consultarlo.
 @router.get("/{vehicle_id}", response_model=VehicleOut)
 def get_vehicle(
     vehicle_id: int,
@@ -69,6 +75,7 @@ def get_vehicle(
     return vehicle
 
 
+# Actualización de vehículo: valida el driver antes de aplicar los cambios.
 @router.put("/{vehicle_id}", response_model=VehicleOut)
 def update_vehicle(
     vehicle_id: int,
@@ -80,6 +87,7 @@ def update_vehicle(
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehículo no encontrado")
     _validate_driver(db, vehicle_in.driver_id)
+    # Aplica solo los campos enviados (exclude_unset).
     for field, value in vehicle_in.model_dump(exclude_unset=True).items():
         setattr(vehicle, field, value)
     db.commit()
@@ -87,6 +95,7 @@ def update_vehicle(
     return vehicle
 
 
+# Baja de vehículo: solo admin. Rechaza si tiene rutas asociadas y audita.
 @router.delete("/{vehicle_id}")
 def delete_vehicle(
     vehicle_id: int,
@@ -99,6 +108,7 @@ def delete_vehicle(
         raise HTTPException(status_code=404, detail="Vehículo no encontrado")
     from app.models.route import Route
 
+    # Protege la integridad referencial: no se borra un vehículo en uso.
     if db.query(Route).filter(Route.vehicle_id == vehicle_id).first():
         raise HTTPException(
             status_code=400, detail="No se puede eliminar: tiene rutas asociadas"
@@ -108,6 +118,7 @@ def delete_vehicle(
     db.commit()
     from app.services.audit import log_action
 
+    # Registra el borrado con la placa para trazabilidad posterior.
     log_action(
         db, current_user.id, "eliminar_vehiculo",
         entidad="vehicle", entidad_id=vehicle_id,

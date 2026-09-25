@@ -13,12 +13,15 @@ from app.schemas.user import UserOut, UserUpdate, UserCreate
 router = APIRouter(prefix="/api/users", tags=["Usuarios"])
 
 
+# Perfil propio: devuelve los datos del usuario autenticado sin filtrar por id.
 @router.get("/me", response_model=UserOut)
 def read_current_user(current_user: User = Depends(get_current_user)):
     """Perfil del usuario autenticado."""
     return current_user
 
 
+# Alta de usuarios del sistema: exclusiva de administradores.
+# Declarada con y sin "/" para aceptar ambos formatos de URL.
 @router.post("", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=UserOut, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def create_user(
@@ -27,6 +30,7 @@ def create_user(
     current_user: User = Depends(require_role([RoleEnum.admin])),
 ):
     """Crear un nuevo usuario (solo admin)."""
+    # El email es único: impide registros duplicados.
     existing = db.query(User).filter(User.email == user_in.email).first()
     if existing:
         raise HTTPException(
@@ -34,6 +38,7 @@ def create_user(
             detail="El email ya está registrado",
         )
 
+    # La contraseña se almacena hasheada, nunca en texto plano.
     user = User(
         email=user_in.email,
         full_name=user_in.full_name,
@@ -45,6 +50,7 @@ def create_user(
     db.refresh(user)
     from app.services.audit import log_action
 
+    # Deja constancia de quién dio de alta al usuario y con qué rol.
     log_action(
         db, current_user.id, "crear_usuario",
         entidad="user", entidad_id=user.id,
@@ -54,6 +60,7 @@ def create_user(
     return user
 
 
+# Listado de usuarios: disponible para roles administrativos.
 @router.get("", response_model=List[UserOut])
 @router.get("/", response_model=List[UserOut], include_in_schema=False)
 def list_users(
@@ -66,6 +73,7 @@ def list_users(
     return db.query(User).all()
 
 
+# Edición de datos de usuario: solo admin.
 @router.put("/{user_id}", response_model=UserOut)
 def update_user(
     user_id: int,
@@ -77,6 +85,7 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    # Aplica únicamente los campos enviados por el cliente (exclude_unset).
     for field, value in user_in.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
     db.commit()
@@ -84,6 +93,7 @@ def update_user(
     return user
 
 
+# Detalle de un usuario concreto: solo admin.
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(
     user_id: int,
@@ -101,6 +111,7 @@ class UserStatusUpdate(BaseModel):
     is_active: bool
 
 
+# Activa/desactiva una cuenta conservando su historial (soft delete).
 @router.patch("/{user_id}/status", response_model=UserOut)
 def update_user_status(
     user_id: int,
@@ -109,6 +120,7 @@ def update_user_status(
     current_user: User = Depends(require_role([RoleEnum.admin])),
 ):
     """Activa o desactiva un usuario (solo admin). Audita el cambio de estado."""
+    # Impide que el admin se desactive a sí mismo y quede fuera del sistema.
     if user_id == current_user.id:
         raise HTTPException(
             status_code=400, detail="No puedes desactivar tu propio usuario"
@@ -116,6 +128,7 @@ def update_user_status(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    # Rechaza un cambio que no modifica nada (ya estaba en ese estado).
     if user.is_active == body.is_active:
         raise HTTPException(
             status_code=400,
@@ -126,6 +139,7 @@ def update_user_status(
     db.refresh(user)
     from app.services.audit import log_action
 
+    # Registra el cambio de estado en el log de auditoría.
     log_action(
         db, current_user.id, "cambiar_estado_usuario",
         entidad="user", entidad_id=user.id,
@@ -135,6 +149,7 @@ def update_user_status(
     return user
 
 
+# Baja de usuario: solo admin, mediante soft delete para no romper FKs.
 @router.delete("/{user_id}")
 def delete_user(
     user_id: int,
@@ -153,6 +168,7 @@ def delete_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    # No se borra el registro: se desactiva para conservar el historial.
     user.is_active = False
     db.commit()
     db.refresh(user)

@@ -14,6 +14,7 @@ def log_action(
     """Registra una acción de auditoría. No lanza excepción si falla —
     un problema de logging nunca debe tumbar la operación principal."""
     try:
+        # Añade el registro a la sesión activa sin hacer commit propio.
         db.add(AuditLog(
             user_id=user_id, accion=accion, entidad=entidad,
             entidad_id=entidad_id, detalle=detalle,
@@ -22,4 +23,5 @@ def log_action(
         # endpoint que la llama, así que si el endpoint falla, el log
         # tampoco se persiste (consistencia).
     except Exception:
+        # Cualquier fallo de auditoría se ignora silenciosamente.
         pass

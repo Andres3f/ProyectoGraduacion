@@ -10,6 +10,7 @@ from app.database import Base
 
 
 class OrderStatus(str, enum.Enum):
+    """Ciclo de vida de un pedido a lo largo de su entrega."""
     pendiente = "pendiente"
     asignado = "asignado"
     en_ruta = "en_ruta"
@@ -18,9 +19,13 @@ class OrderStatus(str, enum.Enum):
 
 
 class Order(Base):
+    """Pedido de entrega asociado a un cliente; es la unidad de trabajo que
+    el optimizador reparte entre vehículos y rutas."""
+
     __tablename__ = "orders"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Cliente destino del pedido.
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     # Columnas denormalizadas (snapshot del cliente) para no romper el
     # frontend ni el optimizador. Se mantienen sincronizadas con el cliente.
@@ -41,10 +46,12 @@ class Order(Base):
     # Tiempo estimado de servicio en la entrega (minutos).
     service_time_min = Column(Integer, nullable=True, default=15)
     notes = Column(String(1000), nullable=True)
+    # Usuario que registró el pedido (nullable para registros del sistema).
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
+    # Cliente relacionado (para resolver el snapshot desde la fuente de verdad).
     client = relationship("Client")

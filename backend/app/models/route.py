@@ -8,6 +8,7 @@ from app.database import Base
 
 
 class RouteStatus(str, enum.Enum):
+    """Estado del recorrido planificado/ejecutado de un vehículo."""
     planificada = "planificada"
     en_progreso = "en_progreso"
     completada = "completada"
@@ -15,10 +16,14 @@ class RouteStatus(str, enum.Enum):
 
 
 class Route(Base):
+    """Ruta de reparto: conjunto ordenado de paradas que un vehículo recorre
+    para entregar los pedidos asignados por el optimizador."""
+
     __tablename__ = "routes"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=True)
+    # Vehículo y conductor asignados a esta ruta.
     vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True)
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     # Snapshot JSON de las paradas (orden de order_ids). Se conserva un sprint
@@ -34,6 +39,7 @@ class Route(Base):
     status = Column(
         Enum(RouteStatus), nullable=False, default=RouteStatus.planificada
     )
+    # Timestamp en que se ejecutó la optimización que generó esta ruta.
     optimized_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(

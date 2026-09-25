@@ -30,6 +30,7 @@ def get_distance_duration_matrix(locations: list[dict]) -> tuple[list[list[int]]
     if not settings.ORS_API_KEY:
         raise ORSError("ORS_API_KEY no configurada")
 
+    # La API pública limita la matriz a 50 ubicaciones por llamada.
     if len(locations) > 50:
         raise ORSError(f"ORS Matrix soporta hasta 50 puntos, se recibieron {len(locations)}")
 
@@ -106,6 +107,7 @@ def _ors_directions(coordinates: list[dict]) -> dict:
         "Authorization": settings.ORS_API_KEY,
         "Content-Type": "application/json",
     }
+    # ORS espera las coordenadas como [lng, lat], igual que la Matrix API.
     body = {"coordinates": [[c["lng"], c["lat"]] for c in coordinates]}
 
     try:
@@ -120,6 +122,7 @@ def _ors_directions(coordinates: list[dict]) -> dict:
     feature = data["features"][0]
     geometry = feature["geometry"]  # GeoJSON LineString — [lng, lat] siguiendo la calle
     props = feature["properties"]
+    # Los segments agrupan instrucciones; los aplanamos en una lista de pasos.
     segments = props.get("segments", [])
 
     steps = []  # instrucciones de manejo, tipo "Gira a la derecha en 5ta Calle"

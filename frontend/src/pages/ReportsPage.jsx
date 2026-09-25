@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 
+// Normaliza los errores del backend a un mensaje legible.
 function getErrorMessage(err) {
   const detail = err?.response?.data?.detail;
   if (!detail) return 'Ocurrió un error inesperado';
@@ -8,6 +9,7 @@ function getErrorMessage(err) {
   return JSON.stringify(detail);
 }
 
+/* Página de reportes globales: muestra resúmenes y tabla de todas las rutas. */
 export default function ReportsPage() {
   const [routes, setRoutes] = useState([]);
   const [vehicles, setVehicles] = useState([]);
@@ -15,6 +17,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Carga rutas, vehículos y usuarios de forma paralela al montar la página.
   useEffect(() => {
     Promise.all([api.get('/routes/'), api.get('/vehicles/'), api.get('/users')])
       .then(([routesRes, vehiclesRes, usersRes]) => {
@@ -26,11 +29,14 @@ export default function ReportsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Busca la placa del vehículo por su id para mostrarla en la tabla.
   const vehiclePlate = (id) =>
     vehicles.find((v) => v.id === id)?.plate || `#${id}`;
+  // Busca el nombre del conductor por su id para mostrarlo en la tabla.
   const driverName = (id) =>
     users.find((u) => u.id === id)?.full_name || '—';
 
+  // Acumuladores globales: distancia total y número total de paradas.
   const totalKm = routes.reduce((acc, r) => acc + (r.total_distance_km || 0), 0);
   const totalStops = routes.reduce((acc, r) => acc + (r.stops?.length || 0), 0);
 
@@ -39,6 +45,7 @@ export default function ReportsPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-1">📊 Reportes globales</h1>
       <p className="text-gray-500 mb-6">Todas las rutas del sistema</p>
 
+      {/* Tarjetas resumen: total de rutas, distancia acumulada y paradas */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <p className="text-2xl font-bold text-gray-900">{routes.length}</p>

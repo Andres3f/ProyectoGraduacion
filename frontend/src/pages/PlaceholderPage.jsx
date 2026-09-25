@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom';
 
+// Página genérica provisional para módulos aún no implementados.
 export default function PlaceholderPage({ title }) {
   const { pathname } = useLocation();
 

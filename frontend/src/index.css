@@ -1,12 +1,16 @@
+/* Directivas de Tailwind: base, componentes y utilidades */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Estilos globales del documento */
 body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
+/* Contenedor del mapa Leaflet: ocupa todo el espacio disponible
+   y conserva bordes redondeados en cualquier tamaño de pantalla */
 .leaflet-container {
   width: 100%;
   height: 100%;

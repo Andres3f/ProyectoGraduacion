@@ -15,6 +15,7 @@ from app.routers import (
 )
 from app.seed import create_initial_admin
 
+# Configuración básica de logging a consola.
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 # ── Lifespan: crear tablas + seed ─────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Inicializa la BD (tablas + admin) al arrancar; corre al inicio de la app."""
     logger.info("🚀 Iniciando %s …", settings.APP_NAME)
     # Importar todos los modelos para que Base.metadata los conozca
     import app.models.user  # noqa: F401
@@ -35,10 +37,12 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     logger.info("✅ Tablas de la BD creadas / verificadas")
 
+    # Crea el admin por defecto únicamente si no existe ninguno (idempotente).
     create_initial_admin()
     yield
 
 
+# Aplicación FastAPI principal con metadatos y ciclo de vida configurado.
 app = FastAPI(
     title=settings.APP_NAME,
     description="API de optimización de rutas de cemento en Jalapa",
@@ -61,6 +65,7 @@ class RelativeRedirectMiddleware(BaseHTTPMiddleware):
         location = response.headers.get("location")
         if location and location.startswith(("http://", "https://")):
             parsed = urlsplit(location)
+            # Reescribe la URL absoluta como ruta relativa (path + query).
             response.headers["location"] = (
                 parsed.path + (f"?{parsed.query}" if parsed.query else "")
             )
@@ -74,6 +79,7 @@ _frontend_origins = [
     for o in settings.FRONTEND_ORIGINS.split(",")
     if o.strip()
 ]
+# Middleware CORS con los orígenes explícitos (y credenciales permitidas).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_frontend_origins,
@@ -81,6 +87,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Middleware propio para redirects relativos (evita perder el header Authorization).
 app.add_middleware(RelativeRedirectMiddleware)
 
 # ── Routers ───────────────────────────────────────────────────
@@ -95,6 +102,7 @@ app.include_router(dashboard.router)
 app.include_router(audit.router)
 
 
+# Endpoint de salud para verificar que la API responde.
 @app.get("/health", tags=["Sistema"])
 def health_check():
     return {"status": "ok", "app": settings.APP_NAME}

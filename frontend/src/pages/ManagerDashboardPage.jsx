@@ -15,6 +15,7 @@ import { Bar, Line, Pie } from 'react-chartjs-2';
 import StatCard from '../components/StatCard';
 import api from '../services/api';
 
+// Registra los componentes de Chart.js necesarios para barras, líneas y pastel.
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -27,15 +28,18 @@ ChartJS.register(
   Legend,
 );
 
+// Retorna la fecha de hoy en formato YYYY-MM-DD.
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
+// Retorna la fecha de hace 6 días (inicio por defecto del rango).
 function weekAgoStr() {
   const d = new Date();
   d.setDate(d.getDate() - 6);
   return d.toISOString().slice(0, 10);
 }
 
+// Normaliza los errores del backend a un mensaje legible.
 function getErrorMessage(err) {
   const detail = err?.response?.data?.detail;
   if (!detail) return 'Ocurrió un error inesperado';
@@ -43,7 +47,9 @@ function getErrorMessage(err) {
   return JSON.stringify(detail);
 }
 
+/* Dashboard gerencial: KPIs, exportación y gráficas por rango de fechas. */
 export default function ManagerDashboardPage() {
+  // Rango de fechas seleccionado (por defecto: últimos 7 días).
   const [dateFrom, setDateFrom] = useState(weekAgoStr());
   const [dateTo, setDateTo] = useState(todayStr());
   const [kpis, setKpis] = useState(null);
@@ -52,6 +58,7 @@ export default function ManagerDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Carga los KPIs y datos de rutas/serie temporal cada vez que cambia el rango.
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -80,6 +87,7 @@ export default function ManagerDashboardPage() {
       .finally(() => setLoading(false));
   }, [dateFrom, dateTo]);
 
+  // Descarga el reporte del rango actual en el formato indicado (Excel o PDF).
   const download = (format) => {
     const url = `/api/dashboard/export?format=${format}&date_from=${dateFrom}&date_to=${dateTo}`;
     api
@@ -99,6 +107,7 @@ export default function ManagerDashboardPage() {
       .catch((err) => setError(getErrorMessage(err)));
   };
 
+  // Datos del gráfico de barras: distancia antes vs después por ruta.
   const chartData = useMemo(() => {
     const labels = routes.map((r) => r.name || `Ruta #${r.id}`);
     const before = routes.map((r) => r.distance_before_km ?? 0);
@@ -120,6 +129,7 @@ export default function ManagerDashboardPage() {
     };
   }, [routes]);
 
+  // Datos del gráfico de línea: evolución del porcentaje de reducción.
   const lineChartData = useMemo(() => {
     const dates = timeseries.dates || [];
     const reductionPcts = (timeseries.series || []).map(
@@ -140,6 +150,7 @@ export default function ManagerDashboardPage() {
     };
   }, [timeseries]);
 
+  // Datos del pastel: distribución de entregas (entregado/fallido/pendiente).
   const pieChartData = useMemo(() => {
     const dist = kpis?.delivery_distribution ?? {
       entregado: 0,
@@ -168,6 +179,7 @@ export default function ManagerDashboardPage() {
         Indicadores clave del negocio en un rango de fechas
       </p>
 
+      {/* Selectores de rango de fechas (desde/hasta) */}
       <div className="flex flex-wrap items-end gap-3 mb-8">
         <div>
           <label className="block text-xs text-gray-500 mb-1">Desde</label>
@@ -187,6 +199,7 @@ export default function ManagerDashboardPage() {
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
           />
         </div>
+        {/* Botones de exportación del reporte */}
         <div className="flex gap-2 ml-auto">
           <button
             onClick={() => download('xlsx')}
@@ -213,6 +226,7 @@ export default function ManagerDashboardPage() {
         </div>
       ) : (
         <>
+          {/* Fila de KPIs principales (distancias, tasas, rutas) */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
             <StatCard
               label="Distancia total (km)"
@@ -242,6 +256,7 @@ export default function ManagerDashboardPage() {
             />
           </div>
 
+          {/* Fila de KPIs de ahorro de combustible y costos */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
             <StatCard
               label="Combustible ahorrado (l)"
@@ -260,6 +275,7 @@ export default function ManagerDashboardPage() {
             />
           </div>
 
+          {/* Gráfico de barras: comparación de distancia antes/después de optimizar */}
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">
               Distancia antes vs después por ruta (km)
@@ -282,7 +298,9 @@ export default function ManagerDashboardPage() {
             )}
           </div>
 
+          {/* Gráficos secundarios: línea de reducción y pastel de entregas */}
           <div className="grid md:grid-cols-2 gap-6 mt-6">
+            {/* Gráfico de línea: evolución del porcentaje de reducción */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Evolución de la reducción (%)
@@ -303,6 +321,7 @@ export default function ManagerDashboardPage() {
               )}
             </div>
 
+            {/* Gráfico de pastel: distribución de entregas */}
             <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">
                 Distribución de entregas

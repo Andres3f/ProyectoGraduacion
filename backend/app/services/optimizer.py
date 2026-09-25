@@ -66,15 +66,18 @@ def _build_time_matrix(distance_matrix: List[List[int]]) -> List[List[int]]:
             if i != j:
                 # minutos = metros / 1000 / (km/h) * 60
                 minutes = (distance_matrix[i][j] / 1000.0) / speed_kmh * 60
+                # Mínimo 1 minuto para que el solver no asuma viajes sin costo.
                 matrix[i][j] = max(1, int(round(minutes)))
     return matrix
 
 
 def _depot():
+    # Punto de origen/retorno de todas las rutas (config. por defecto).
     return {"lat": settings.DEPOT_LAT, "lng": settings.DEPOT_LNG}
 
 
 def _service_time_minutes(order) -> int:
+    # Tiempo de descarga en cada parada (minutos) o 0 si no está definido.
     return int(order.service_time_min) if order.service_time_min else 0
 
 
@@ -119,6 +122,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         }
 
     depot = _depot()
+    # Nodo 0 = depósito; el resto son los pedidos en el orden recibido.
     locations = [depot] + [
         {"lat": o.latitude, "lng": o.longitude} for o in orders
     ]
@@ -128,6 +132,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
     # o no hay API key, se usa Haversine como fallback exactamente como antes.
     try:
         distance_matrix, duration_matrix_sec = get_distance_duration_matrix(locations)
+        # Convierte duraciones de segundos a minutos enteros (mínimo 1).
         time_matrix = [[max(1, round(d / 60)) for d in row] for row in duration_matrix_sec]
         matrix_source = "ors"
     except ORSError as e:
@@ -136,17 +141,21 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         time_matrix = _build_time_matrix(distance_matrix)
         matrix_source = "haversine"
 
+    # Capacidad en kg de cada vehículo y demanda (peso) de cada pedido.
+    # La demanda del depósito se fija en 0.
     vehicle_capacities = [
         int(v.capacity_kg) if v.capacity_kg else 0 for v in vehicles
     ]
     demands = [0] + [int(o.weight_kg) for o in orders]  # kg, 0 para depósito
 
+    # Crea el índice y el modelo de enrutado (todos los vehículos salen del depósito, nodo 0).
     manager = pywrapcp.RoutingIndexManager(
         len(locations), num_vehicles, 0
     )
     routing = pywrapcp.RoutingModel(manager)
 
     # ── Costo: distancia (metros) ──────────────────────────────
+    # Función de costo por arco: minimizar los metros recorridos por cada vehículo.
     def distance_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
@@ -156,6 +165,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
     routing.SetArcCostEvaluatorOfAllVehicles(distance_callback_index)
 
     # ── Dimensión de capacidad (CVRP) ──────────────────────────
+    # Suma la demanda (kg) acumulada por vehículo sin exceder su capacidad.
     def demand_callback(from_index):
         from_node = manager.IndexToNode(from_index)
         return demands[from_node]
@@ -170,11 +180,13 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
     )
 
     # ── Dimensión de tiempo (viaje + servicio) ─────────────────
+    # Acumula tiempo de viaje más tiempo de descarga en cada parada.
     service_times = [0] + [_service_time_minutes(o) for o in orders]
 
     def time_callback(from_index, to_index):
         from_node = manager.IndexToNode(from_index)
         to_node = manager.IndexToNode(to_index)
+        # El servicio se cuenta al llegar al nodo destino (el depósito no atiende).
         service = service_times[to_node] if to_node > 0 else 0
         return time_matrix[from_node][to_node] + service
 
@@ -218,6 +230,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         routing.AddDisjunction([manager.NodeToIndex(node)], big_number)
 
     # ── Estrategia de búsqueda ─────────────────────────────────
+    # Heurística PATH_CHEAPEST_ARC + límite de 10 s para respuestas rápidas.
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     search_parameters.first_solution_strategy = (
         routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
@@ -235,6 +248,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         }
 
     # ── Extraer rutas por vehículo ─────────────────────────────
+    # Recorre la solución siguiendo los NextVar de cada vehículo.
     routes = []
     visited_node_indices = set()
     for vehicle_idx in range(num_vehicles):
@@ -244,6 +258,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
         route_distance = 0
         route_weight = 0
 
+        # Avanza por la cadena de nodos del vehículo hasta volver al depósito.
         while not routing.IsEnd(index):
             node = manager.IndexToNode(index)
             visited_node_indices.add(node)
@@ -252,7 +267,9 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
 
             if node > 0:  # pedido real (ignoramos el depósito)
                 order = orders[node - 1]
+                # ETA estimada = hora de salida + minutos acumulados del solver.
                 arrival_min = solution.Value(time_dimension.CumulVar(index))
+                # Distancia del tramo anterior a este nodo (metros).
                 leg_distance_m = distance_matrix[prev_node][node]
                 stops.append({
                     "order_id": order.id,
@@ -269,6 +286,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
             prev_node = node
             index = next_index
 
+        # Solo se registra la ruta si el vehículo tiene al menos una parada.
         if stops:
             routes.append({
                 "vehicle_id": vehicles[vehicle_idx].id,
@@ -278,6 +296,7 @@ def optimize_routes(orders: list, vehicles: list) -> dict:
             })
 
     # ── Pedidos no asignados ───────────────────────────────────
+    # Índice i+1 del nodo no visitado por ninguna ruta = pedido sin asignar.
     unassigned = [
         o.id for i, o in enumerate(orders)
         if (i + 1) not in visited_node_indices

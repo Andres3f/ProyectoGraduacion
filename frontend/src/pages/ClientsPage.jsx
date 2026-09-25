@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 
+// Normaliza los errores del backend a un mensaje legible para el usuario.
 function getErrorMessage(err) {
   const detail = err?.response?.data?.detail;
   if (!detail) return 'Ocurrió un error inesperado';
@@ -9,6 +10,7 @@ function getErrorMessage(err) {
   return JSON.stringify(detail);
 }
 
+// Valores por defecto del formulario de cliente (creación/edición).
 const EMPTY = {
   name: '',
   address: '',
@@ -17,16 +19,20 @@ const EMPTY = {
   longitude: '',
 };
 
+/* Página de gestión de clientes: lista, crea, edita y elimina clientes. */
 export default function ClientsPage() {
+  // Lista de clientes y estados de carga/error.
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Estado del formulario (modal) de creación/edición.
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
 
+  // Obtiene la lista de clientes desde el backend.
   const loadData = () => {
     setLoading(true);
     api
@@ -36,8 +42,10 @@ export default function ClientsPage() {
       .finally(() => setLoading(false));
   };
 
+  // Carga inicial de la lista de clientes al montar el componente.
   useEffect(loadData, []);
 
+  // Abre el formulario en modo creación con el cliente vacío.
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY, latitude: '', longitude: '' });
@@ -45,6 +53,7 @@ export default function ClientsPage() {
     setShowForm(true);
   };
 
+  // Abre el formulario en modo edición precargando los datos del cliente.
   const openEdit = (c) => {
     setEditing(c);
     setForm({
@@ -58,6 +67,7 @@ export default function ClientsPage() {
     setShowForm(true);
   };
 
+  // Envía el formulario: crea o actualiza el cliente según el modo actual.
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
@@ -84,6 +94,7 @@ export default function ClientsPage() {
     }
   };
 
+  // Elimina el cliente tras confirmación del usuario.
   const handleDelete = async (c) => {
     if (!window.confirm(`¿Eliminar el cliente ${c.name}?`)) return;
     setError(null);
@@ -99,6 +110,7 @@ export default function ClientsPage() {
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">👥 Clientes</h1>
+        {/* Botón para registrar un nuevo cliente */}
         <button
           onClick={openCreate}
           className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-xl transition shadow"
@@ -115,6 +127,7 @@ export default function ClientsPage() {
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          {/* Modal con el formulario de creación/edición de cliente */}
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-gray-900">
@@ -221,6 +234,7 @@ export default function ClientsPage() {
       )}
 
       {loading ? (
+        /* Indicador de carga mientras se obtienen los clientes */
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-brand-500 border-t-transparent" />
         </div>
@@ -229,6 +243,7 @@ export default function ClientsPage() {
           No hay clientes registrados
         </div>
       ) : (
+        /* Tabla con la lista de clientes y sus acciones Editar/Eliminar */
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
@@ -249,6 +264,7 @@ export default function ClientsPage() {
                   <td className="px-6 py-4">{c.zone || '—'}</td>
                   <td className="px-6 py-4 text-right">{c.latitude}</td>
                   <td className="px-6 py-4 text-right">{c.longitude}</td>
+                  {/* Acciones por fila: editar y eliminar */}
                   <td className="px-6 py-4 text-right space-x-2">
                     <button
                       onClick={() => openEdit(c)}

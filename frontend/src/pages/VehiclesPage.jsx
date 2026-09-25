@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
 
+// Normaliza los errores del backend a un mensaje legible.
 function getErrorMessage(err) {
   const detail = err?.response?.data?.detail;
   if (!detail) return 'Ocurrió un error inesperado';
@@ -9,6 +10,7 @@ function getErrorMessage(err) {
   return JSON.stringify(detail);
 }
 
+// Modelo inicial del formulario de vehículo (creación).
 const EMPTY = {
   plate: '',
   description: '',
@@ -19,17 +21,20 @@ const EMPTY = {
   driver_id: '',
 };
 
+/* Página de vehículos: lista, crea, edita y elimina la flota. */
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Estado del formulario modal y del modo actual (crear o editar).
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
 
+  // Obtiene los vehículos (y conductores disponibles) del backend.
   const loadData = () => {
     setLoading(true);
     api
@@ -290,6 +295,7 @@ export default function VehiclesPage() {
         </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+          {/* Tabla con la flota de vehículos registrados */}
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
               <tr>

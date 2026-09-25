@@ -15,6 +15,8 @@ from app.services.geo import point_wkt
 router = APIRouter(prefix="/api/clients", tags=["Clientes"])
 
 
+# Consulta para cualquier usuario autenticado (lectura general).
+# Se declara con y sin slash final para tolerar ambos formatos de URL.
 @router.get("/", response_model=List[ClientOut])
 @router.get("", response_model=List[ClientOut], include_in_schema=False)
 def list_clients(
@@ -25,6 +27,8 @@ def list_clients(
 ):
     """Listar clientes con filtros opcionales de zona y nombre."""
     query = db.query(Client)
+    # Filtros opcionales: coincidencia exacta de zona y búsqueda de nombre
+    # insensible a mayúsculas (ILike).
     if zone:
         query = query.filter(Client.zone == zone)
     if name:
@@ -32,6 +36,8 @@ def list_clients(
     return query.all()
 
 
+# Consulta geoespacial por proximidad: útil para ubicar clientes cerca de una
+# ruta o cubrir zonas de entrega.
 @router.get("/nearby", response_model=List[ClientOut])
 def nearby_clients(
     lat: float = Query(..., ge=-90, le=90),
@@ -41,6 +47,7 @@ def nearby_clients(
     _: User = Depends(get_current_user),
 ):
     """Clientes dentro de un radio (km) usando PostGIS ST_DWithin."""
+    # Convierte el punto en WKT y el radio en metros para el índice PostGIS.
     point = point_wkt(lng, lat)
     radius_m = radius_km * 1000
     query = db.query(Client).filter(
@@ -49,6 +56,7 @@ def nearby_clients(
     return query
 
 
+# Alta de clientes: reservada a roles operativos (admin y planificador).
 @router.post("/", response_model=ClientOut, status_code=status.HTTP_201_CREATED)
 def create_client(
     client_in: ClientCreate,
@@ -58,6 +66,7 @@ def create_client(
     """Crear un nuevo cliente."""
     client = Client(
         **client_in.model_dump(),
+        # La geometría se deriva de las coordenadas para poder usar PostGIS.
         geom=point_wkt(client_in.longitude, client_in.latitude),
     )
     db.add(client)
@@ -66,6 +75,7 @@ def create_client(
     return client
 
 
+# Detalle de un cliente; cualquier usuario autenticado puede consultarlo.
 @router.get("/{client_id}", response_model=ClientOut)
 def get_client(
     client_id: int,
@@ -78,6 +88,7 @@ def get_client(
     return client
 
 
+# Actualización de cliente: mantiene coherente la geometría con las coordenadas.
 @router.put("/{client_id}", response_model=ClientOut)
 def update_client(
     client_id: int,
@@ -89,6 +100,8 @@ def update_client(
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    # Aplica solo los campos enviados (exclude_unset) y recalcula geom siempre,
+    # tomando los valores ya actualizados aunque las coordenadas no cambien.
     data = client_in.model_dump(exclude_unset=True)
     for field, value in data.items():
         setattr(client, field, value)
@@ -101,6 +114,7 @@ def update_client(
     return client
 
 
+# Baja de cliente: solo admin. Protege la integridad referencial de pedidos.
 @router.delete("/{client_id}")
 def delete_client(
     client_id: int,
@@ -111,6 +125,7 @@ def delete_client(
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    # No permite borrar si existen pedidos que referencian al cliente.
     if db.query(Order).filter(Order.client_id == client_id).first():
         raise HTTPException(
             status_code=400,

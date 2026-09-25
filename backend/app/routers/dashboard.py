@@ -16,6 +16,8 @@ from app.services.metrics import compare_before_after, estimate_savings
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard / KPIs"])
 
 
+# Convierte un rango de fechas "de un día" a intervalos reales con hora,
+# para no excluir registros del primer/last día por la hora 00:00.
 def _range_start_end(date_from: date, date_to: date):
     """Convierte fechas de un día a intervalos datetime (inicio/fin de día)."""
     start = datetime.combine(date_from, time.min)
@@ -23,13 +25,18 @@ def _range_start_end(date_from: date, date_to: date):
     return start, end
 
 
+# Núcleo de la sección dashboard: calcula KPIs y detalles por ruta y es
+# reutilizado por los endpoints de reporte y exportación.
 def _build_report(db: Session, date_from: date, date_to: date) -> dict:
     """Recopila KPIs + detalle de rutas del rango para reportes/exportación."""
     start, end = _range_start_end(date_from, date_to)
 
+    # Rutas creadas dentro del rango solicitado.
     routes = db.query(Route).filter(Route.created_at.between(start, end)).all()
     total_km = sum(r.total_distance_km or 0 for r in routes)
 
+    # Paradas de esas rutas: las entregadas y las que llegaron a tiempo
+    # (delivered_at <= eta) alimentan las tasas de entrega y puntualidad.
     stops = (
         db.query(RouteStop)
         .join(Route)
@@ -74,6 +81,8 @@ def _build_report(db: Session, date_from: date, date_to: date) -> dict:
     }
 
 
+# Prepara una fila legible de cada ruta incluyendo la comparativa de distancia
+# antes (naive) contra después (optimizada), cuando hay paradas.
 def _route_dashboard_row(db: Session, r: Route) -> dict:
     """Convierte una ruta en una fila de reporte con distancia antes/después."""
     # Distancia "antes": recorrido naive en el orden original de los pedidos.
@@ -95,6 +104,7 @@ def _route_dashboard_row(db: Session, r: Route) -> dict:
         "created_at": r.created_at,
     }
     if optimized:
+        # Orden "antes": se recuperan los pedidos por su id original.
         orders_naive = (
             db.query(Order)
             .join(RouteStop)
@@ -106,11 +116,13 @@ def _route_dashboard_row(db: Session, r: Route) -> dict:
         row["distance_before_km"] = metrics.get("distance_before_km", 0)
         row["distance_after_km"] = metrics.get("distance_after_km", 0)
     else:
+        # Sin paradas, no hay recorrido anterior que comparar.
         row["distance_before_km"] = 0
         row["distance_after_km"] = r.total_distance_km or 0
     return row
 
 
+# KPIs agregados del rango; solo gerentes y admins.
 @router.get("/kpis")
 def get_kpis(
     date_from: date = Query(..., description="Fecha inicial (YYYY-MM-DD)"),
@@ -122,6 +134,7 @@ def get_kpis(
     return _build_report(db, date_from, date_to)["kpis"]
 
 
+# Serie diaria de ahorro para el gráfico de evolución en el tiempo.
 @router.get("/kpis/timeseries")
 def get_kpis_timeseries(
     date_from: date = Query(..., description="Fecha inicial (YYYY-MM-DD)"),
@@ -135,6 +148,7 @@ def get_kpis_timeseries(
     """
     routes_rows = _build_report(db, date_from, date_to)["routes"]
 
+    # Agrupa las rutas por día y suma las distancias antes/después de cada día.
     per_day: dict[date, dict] = {}
     for r in routes_rows:
         day = r["created_at"].date() if r.get("created_at") else None
@@ -149,6 +163,7 @@ def get_kpis_timeseries(
         entry["after"] += after
         entry["km_saved"] += max(0, before - after)
 
+    # Por cada día calcula el % de reducción y la cantidad de rutas.
     series = []
     for day in sorted(per_day):
         e = per_day[day]
@@ -165,6 +180,7 @@ def get_kpis_timeseries(
     return {"dates": [s["date"] for s in series], "series": series}
 
 
+# Exporta KPIs + tabla de rutas en xlsx o pdf, dejando constancia en auditoría.
 @router.get("/export")
 def export_report(
     format: str = Query("xlsx", description="xlsx | pdf"),
@@ -178,6 +194,7 @@ def export_report(
     kpis = data["kpis"]
     routes = data["routes"]
 
+    # Cada formato delega en su generador y aporta tipo MIME y nombre de archivo.
     if format == "xlsx":
         content, media_type, filename = _build_xlsx(kpis, routes, date_from, date_to)
     elif format == "pdf":
@@ -187,6 +204,7 @@ def export_report(
 
     from app.services.audit import log_action
 
+    # Audita quién exportó el reporte y con qué parámetros.
     log_action(
         db, current_user.id, "exportar_reporte",
         entidad="report", detalle={"format": format, "date_from": date_from.isoformat(), "date_to": date_to.isoformat()},
@@ -200,6 +218,7 @@ def export_report(
     )
 
 
+# Genera el reporte en Excel: hoja con KPIs y tabla de rutas.
 def _build_xlsx(kpis, routes, date_from, date_to):
     from openpyxl import Workbook
     from openpyxl.styles import Font
@@ -208,6 +227,7 @@ def _build_xlsx(kpis, routes, date_from, date_to):
     ws = wb.active
     ws.title = "Reporte"
 
+    # Encabezado y bloque de KPIs del rango.
     ws.append(["Reporte Optirutas Jalapa"])
     ws.append([f"Rango: {date_from} a {date_to}"])
     ws.append([])
@@ -219,6 +239,7 @@ def _build_xlsx(kpis, routes, date_from, date_to):
     ws.append(["km promedio por ruta", kpis["avg_km_per_route"]])
     ws.append([])
 
+    # Tabla detallada de rutas con la cabecera resaltada en negrita.
     ws.append(["Rutas"])
     header = ["Ruta", "Estado", "Vehículo", "Conductor", "Distancia (km)", "Paradas"]
     ws.append(header)
@@ -230,12 +251,14 @@ def _build_xlsx(kpis, routes, date_from, date_to):
             r["distance_km"], r["stops"],
         ])
 
+    # El contenido se devuelve en memoria (BytesIO) para la respuesta.
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
     return buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", f"optirutas_{date_from}_{date_to}.xlsx"
 
 
+# Genera el reporte PDF con reportlab (KPIs + tabla de rutas).
 def _build_pdf(kpis, routes, date_from, date_to):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
@@ -248,10 +271,12 @@ def _build_pdf(kpis, routes, date_from, date_to):
     doc = SimpleDocTemplate(buf, pagesize=letter)
     styles = getSampleStyleSheet()
     story = []
+    # Título del documento y rango consultado.
     story.append(Paragraph("Reporte Optirutas Jalapa", styles["Title"]))
     story.append(Paragraph(f"Rango: {date_from} a {date_to}", styles["Normal"]))
     story.append(Spacer(1, 12))
 
+    # Sección de KPIs como tabla simple.
     story.append(Paragraph("KPIs", styles["Heading2"]))
     kpi_rows = [
         ["Distancia total (km)", kpis["total_distance_km"]],
@@ -268,6 +293,7 @@ def _build_pdf(kpis, routes, date_from, date_to):
     story.append(kpi_table)
     story.append(Spacer(1, 12))
 
+    # Tabla de rutas con cabecera azul y en negrita.
     story.append(Paragraph("Rutas", styles["Heading2"]))
     header = ["Ruta", "Estado", "Vehículo", "Conductor", "Km", "Paradas"]
     rows = [header] + [

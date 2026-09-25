@@ -5,13 +5,17 @@ from app.models.route import RouteStatus
 
 
 class RouteCreate(BaseModel):
+    """Entrada para crear una ruta a partir de pedidos seleccionados."""
     name: Optional[str] = None
     vehicle_id: Optional[int] = None
     driver_id: Optional[int] = None
+    # Pedidos que conformarán la ruta; su orden se resuelve al optimizar.
     order_ids: List[int] = []
 
 
 class RouteStopOut(BaseModel):
+    """Respuesta API de una parada: datos de entrega + denormalizados del pedido
+    para el mapa y el frontend del conductor (OPT-18)."""
     id: int
     order_id: int
     sequence: int
@@ -29,6 +33,8 @@ class RouteStopOut(BaseModel):
 
 
 class RouteOut(BaseModel):
+    """Respuesta API de una ruta completa: paradas en orden, métricas totales,
+    geometría real y pasos de navegación por tramo."""
     id: int
     name: Optional[str]
     vehicle_id: Optional[int]
@@ -51,15 +57,19 @@ class RouteOut(BaseModel):
 
 
 class AssignDriverRequest(BaseModel):
+    """Asigna un conductor a una ruta."""
     driver_id: int
 
 
 class OptimizeRequest(BaseModel):
+    """Solicitud de optimización: pedidos a repartir y vehículos disponibles."""
     order_ids: List[int]
     vehicle_ids: List[int]
 
 
 class OptimizeResponse(BaseModel):
+    """Resultado de la optimización: las rutas generadas, pedidos que no se
+    pudieron asignar, y métricas del proceso."""
     routes: List[RouteOut] = []
     unassigned_order_ids: List[int] = []
     success: bool

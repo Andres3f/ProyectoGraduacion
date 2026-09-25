@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 random.seed(42)  # resultados reproducibles
 
 # ── Credenciales por defecto ─────────────────────────────────
+# Usuarios de demostración: (email, nombre, contraseña, rol).
 USERS = [
     # (email, full_name, password, role)
     ("admin@optirutas.com", "Administrador", "Admin123!", RoleEnum.admin),
@@ -50,6 +51,7 @@ JALAPA_CENTER_LNG = -89.9886
 LAT_SPREAD = 0.03
 LNG_SPREAD = 0.03
 
+# Flota de demostración: (placa, descripción, capacidad_kg, capacidad_m3).
 VEHICLES = [
     # (placa, descripción, capacidad_kg, capacidad_m3)
     ("R-101", "Camión 5 ton", 5000, 20),
@@ -60,9 +62,11 @@ VEHICLES = [
 ]
 
 QUINTAL_KG = 45.5  # 1 quintal ≈ 45.5 kg
+# Zonas de Jalapa para asignar direcciones aleatorias a los clientes demo.
 ZONAS = ["Centro", "San José", "El Carmen", "Las Flores", "Vista Hermosa",
          "La Reforma", "Buenos Aires", "San Antonio"]
 
+# Cantidades objetivo de la demo.
 NUM_CLIENTS = 30
 NUM_ORDERS = 100
 NUM_ROUTES = 20
@@ -72,6 +76,7 @@ NUM_ROUTES = 20
 
 
 def _get_or_create_user(db: Session, email, full_name, password, role) -> User:
+    # Devuelve el usuario existente; si no existe, lo crea (idempotente).
     user = db.query(User).filter(User.email == email).first()
     if user:
         return user
@@ -88,9 +93,11 @@ def _get_or_create_user(db: Session, email, full_name, password, role) -> User:
 
 
 def _get_or_create_client(db: Session, name: str) -> Client:
+    # Devuelve el cliente existente por nombre o crea uno con coords aleatorias.
     client = db.query(Client).filter(Client.name == name).first()
     if client:
         return client
+    # Coordenadas pseudoaleatorias alrededor del centro urbano de Jalapa.
     lat = JALAPA_CENTER_LAT + random.uniform(-LAT_SPREAD, LAT_SPREAD)
     lng = JALAPA_CENTER_LNG + random.uniform(-LNG_SPREAD, LNG_SPREAD)
     client = Client(
@@ -107,6 +114,7 @@ def _get_or_create_client(db: Session, name: str) -> Client:
 
 
 def _get_or_create_vehicle(db: Session, plate, description, cap_kg, cap_m3, driver_id) -> Vehicle:
+    # Devuelve el vehículo existente por placa o crea uno disponible.
     vehicle = db.query(Vehicle).filter(Vehicle.plate == plate).first()
     if vehicle:
         return vehicle
@@ -138,6 +146,7 @@ def _persist_route(db: Session, vehicle, route_data, route_index: int) -> Route:
     db.add(route)
     db.flush()
 
+    # Crea una parada por cada pedido de la ruta, con estado aleatorio demo.
     for stop in route_data["stops"]:
         db.add(RouteStop(
             route_id=route.id,
@@ -199,10 +208,12 @@ def seed_demo_data() -> dict:
         # ── Usuarios por rol ─────────────────────────────────
         driver = None
         for email, name, pwd, role in USERS:
+            # Guarda si el usuario ya existía para contar solo los nuevos.
             existed = db.query(User).filter(User.email == email).first()
             _get_or_create_user(db, email, name, pwd, role)
             if not existed:
                 created["users"] += 1
+            # Recordamos el conductor para asignarlo al primer vehículo.
             if role == RoleEnum.conductor:
                 driver = db.query(User).filter(User.email == email).first()
 
@@ -217,6 +228,7 @@ def seed_demo_data() -> dict:
             clients.append(c)
 
         # ── Vehículos (5) ────────────────────────────────────
+        # El primer vehículo se asigna al conductor demo (si existe).
         vehicles = []
         for i, (plate, desc, cap_kg, cap_m3) in enumerate(VEHICLES):
             existed = db.query(Vehicle).filter(Vehicle.plate == plate).first()
@@ -229,8 +241,10 @@ def seed_demo_data() -> dict:
         db.commit()
 
         # ── Pedidos (~100) ───────────────────────────────────
+        # Solo se crean si la tabla está vacía (idempotencia).
         if db.query(Order).count() == 0:
             for _ in range(NUM_ORDERS):
+                # Cada pedido copia los datos geoespaciales de un cliente aleatorio.
                 client = random.choice(clients)
                 quintales = random.randint(1, 20)
                 db.add(Order(
@@ -253,26 +267,32 @@ def seed_demo_data() -> dict:
             logger.info("📦 Creados %s pedidos", NUM_ORDERS)
 
         # ── Rutas optimizadas (20) ──────────────────────────
+        # Toma un lote de pedidos pendientes y los reparte en rutas con OR-Tools.
         pendientes = db.query(Order).filter(
             Order.status == OrderStatus.pendiente
         ).all()
+        # Solo se generan rutas si hay pedidos y aún no se alcanzó el objetivo.
         if pendientes and db.query(Route).count() < NUM_ROUTES:
             random.shuffle(pendientes)
+            # Se toman hasta NUM_ROUTES * 5 pedidos como pool de trabajo.
             chunk = min(len(pendientes), NUM_ROUTES * 5)
             pool = pendientes[:chunk]
             route_number = db.query(Route).count()
 
+            # Crea una ruta por grupo de 5 pedidos con un vehículo aleatorio.
             for k in range(NUM_ROUTES):
                 subset = pool[k * 5:(k + 1) * 5]
                 if not subset:
                     break
                 veh = random.choice(vehicles)
                 result = optimize_routes(subset, [veh])
+                # Si el solver no obtuvo solución factible, se omite el grupo.
                 if not result["success"] or not result["routes"]:
                     continue
                 route_data = result["routes"][0]
                 _persist_route(db, veh, route_data, route_number)
                 route_number += 1
+                # Los pedidos ya ruteados pasan a estado "en ruta".
                 db.query(Order).filter(
                     Order.id.in_([s["order_id"] for s in route_data["stops"]])
                 ).update({Order.status: OrderStatus.en_ruta}, synchronize_session=False)
