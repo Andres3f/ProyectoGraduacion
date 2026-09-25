@@ -140,3 +140,96 @@ def _ors_directions(coordinates: list[dict]) -> dict:
         "duration_s": props["summary"]["duration"],
         "steps": steps,
     }
+
+
+# ── Geocoding de direcciones (Cliente) ────────────────────────────────
+
+
+def geocode_address(
+    query: str, focus_lat: float = None, focus_lng: float = None
+) -> list[dict]:
+    """Busca una dirección y devuelve hasta 5 candidatos con coordenadas.
+
+    Usa ORS Geocoding (Pelias) si hay API key; si falla o no hay key, usa
+    Nominatim como respaldo (público, gratis, límite 1 req/seg). Solo lanza
+    ORSError si AMBOS proveedores fallan; el caller debe poder responder
+    "no se encontraron resultados" sin romperse.
+
+    ``focus_lat``/``focus_lng``: coordenadas donde priorizar la búsqueda
+    (p. ej. el depósito); mejora la precisión de direcciones cortas o
+    ambiguas típicas de Jalapa.
+    """
+    if settings.ORS_API_KEY:
+        try:
+            return _geocode_ors(query, focus_lat, focus_lng)
+        except ORSError as exc:
+            logger.warning("Geocoding ORS falló (%s), probando Nominatim.", exc)
+    return _geocode_nominatim(query, focus_lat, focus_lng)
+
+
+def _geocode_ors(query: str, focus_lat: float, focus_lng: float) -> list[dict]:
+    """Geocoding con ORS/Pelias restringido a Guatemala (GT)."""
+    url = f"{settings.ORS_BASE_URL}/geocode/search"
+    params = {
+        "api_key": settings.ORS_API_KEY,
+        "text": query,
+        "boundary.country": "GT",
+        "size": 5,
+    }
+    if focus_lat is not None and focus_lng is not None:
+        params["focus.point.lat"] = focus_lat
+        params["focus.point.lon"] = focus_lng
+
+    try:
+        resp = requests.get(url, params=params, timeout=settings.ORS_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise ORSError(f"Geocoding ORS falló: {exc}") from exc
+
+    # GeoJSON FeatureCollection: las coordenadas vienen como [lon, lat].
+    return [
+        {
+            "label": f["properties"].get("label", query),
+            "lat": f["geometry"]["coordinates"][1],
+            "lng": f["geometry"]["coordinates"][0],
+            "confidence": f["properties"].get("confidence"),
+            "source": "ors",
+        }
+        for f in data.get("features", [])
+    ]
+
+
+def _geocode_nominatim(query: str, focus_lat: float, focus_lng: float) -> list[dict]:
+    """Respaldo gratuito con OpenStreetMap Nominatim.
+
+    Respeta el límite de 1 req/seg: usar solo para búsquedas puntuales del
+    usuario (clic en botón), NUNCA en loops automáticos masivos. Nominatim
+    exige un User-Agent identificable.
+    """
+    del focus_lat, focus_lng  # Nominatim suele ambigüedad; acotamos solo por país.
+    url = "https://nominatim.openstreetmap.org/search"
+    params = {
+        "q": f"{query}, Jalapa, Guatemala",
+        "format": "json",
+        "limit": 5,
+        "countrycodes": "gt",
+    }
+    headers = {"User-Agent": "OptirutasJalapa/1.0 (proyecto de tesis UMG)"}
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=8)
+        resp.raise_for_status()
+        data = resp.json()
+    except (requests.RequestException, ValueError) as exc:
+        raise ORSError(f"Geocoding Nominatim falló: {exc}") from exc
+
+    return [
+        {
+            "label": r["display_name"],
+            "lat": float(r["lat"]),
+            "lng": float(r["lon"]),
+            "confidence": None,  # Nominatim no expone confianza porcentual.
+            "source": "nominatim",
+        }
+        for r in data
+    ]

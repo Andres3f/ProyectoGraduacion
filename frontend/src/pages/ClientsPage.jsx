@@ -1,4 +1,7 @@
 import { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import api from '../services/api';
 
 // Normaliza los errores del backend a un mensaje legible para el usuario.
@@ -19,6 +22,24 @@ const EMPTY = {
   longitude: '',
 };
 
+// Icono del marcador de confirmación en el mapa (evita depender de las
+// imágenes por defecto de Leaflet, que requieren rutas/asset específicas).
+const PIN_ICON = L.divIcon({
+  className: '',
+  html: '<div style="width:26px;height:26px;border-radius:50%;background:#16a34a;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4);"></div>',
+  iconSize: [26, 26],
+  iconAnchor: [13, 13],
+});
+
+// Componente auxiliar: convierte un clic del usuario sobre el mapa en una
+// selección de coordenadas (mismo patrón visual de depósitos).
+function MapClickPlacer({ onPick }) {
+  useMapEvents({
+    click: (e) => onPick(e.latlng.lat, e.latlng.lng),
+  });
+  return null;
+}
+
 /* Página de gestión de clientes: lista, crea, edita y elimina clientes. */
 export default function ClientsPage() {
   // Lista de clientes y estados de carga/error.
@@ -31,6 +52,11 @@ export default function ClientsPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+
+  // Estado del geocoding: resultados candidatos y banderas de búsqueda.
+  const [geocodeResults, setGeocodeResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
 
   // Obtiene la lista de clientes desde el backend.
   const loadData = () => {
@@ -49,6 +75,8 @@ export default function ClientsPage() {
   const openCreate = () => {
     setEditing(null);
     setForm({ ...EMPTY, latitude: '', longitude: '' });
+    setGeocodeResults([]);
+    setSearched(false);
     setError(null);
     setShowForm(true);
   };
@@ -63,9 +91,39 @@ export default function ClientsPage() {
       latitude: c.latitude,
       longitude: c.longitude,
     });
+    setGeocodeResults([]);
+    setSearched(false);
     setError(null);
     setShowForm(true);
   };
+
+  // Busca candidatos de coordenadas para la dirección escrita (geocoding).
+  const handleSearchAddress = async () => {
+    if (!form.address || form.address.trim().length < 5) return;
+    setSearching(true);
+    setError(null);
+    try {
+      const res = await api.get('/clients/geocode', {
+        params: { q: form.address.trim() },
+      });
+      setGeocodeResults(res.data.results);
+      setSearched(true);
+      // Preselecciona el mejor candidato, pero el usuario debe confirmarlo
+      // visualmente en el mapa antes de guardar.
+      if (res.data.results.length > 0) {
+        const best = res.data.results[0];
+        setForm((f) => ({ ...f, latitude: best.lat, longitude: best.lng }));
+      }
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Coloca las coordenadas en el formulario (clic en un candidato o en el mapa).
+  const pickCoords = (lat, lng) =>
+    setForm((f) => ({ ...f, latitude: lat, longitude: lng }));
 
   // Envía el formulario: crea o actualiza el cliente según el modo actual.
   const handleSubmit = async (e) => {
@@ -157,15 +215,57 @@ export default function ClientsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Dirección *
                 </label>
-                <input
-                  required
-                  value={form.address}
-                  onChange={(e) =>
-                    setForm({ ...form, address: e.target.value })
-                  }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                  placeholder="Calle y número"
-                />
+                {/* Dirección + botón de geocoding para obtener coordenadas */}
+                <div className="flex gap-2">
+                  <input
+                    required
+                    value={form.address}
+                    onChange={(e) => {
+                      setForm({ ...form, address: e.target.value });
+                      // La dirección cambió: los resultados previos ya no aplican.
+                      setGeocodeResults([]);
+                      setSearched(false);
+                    }}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    placeholder="5ta Calle 2-30 Zona 1"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSearchAddress}
+                    disabled={searching || form.address.trim().length < 5}
+                    className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 text-sm font-medium rounded-xl transition shrink-0"
+                  >
+                    {searching ? 'Buscando...' : '📍 Buscar en el mapa'}
+                  </button>
+                </div>
+
+                {/* Candidatos sugeridos por el geocodificador */}
+                {geocodeResults.length > 0 && (
+                  <div className="mt-2 text-sm border rounded-xl p-2 bg-gray-50">
+                    <p className="font-medium mb-1 text-gray-600">
+                      Se encontraron varias coincidencias, elige la correcta:
+                    </p>
+                    {geocodeResults.map((r, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => pickCoords(r.lat, r.lng)}
+                        className="block text-left w-full py-1 px-1 hover:bg-gray-100 rounded"
+                      >
+                        {r.label}
+                        {r.confidence != null &&
+                          ` (${Math.round(r.confidence * 100)}% confianza)`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Sin resultados: se invita a ubicar el punto manualmente */}
+                {searched && geocodeResults.length === 0 && (
+                  <p className="mt-2 text-xs text-amber-600">
+                    No se encontraron resultados. Haz clic en el mapa para ubicar
+                    el punto manualmente.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -178,36 +278,74 @@ export default function ClientsPage() {
                   placeholder="Ej. Centro, San José"
                 />
               </div>
+              <div>
+                {/* Mapa de confirmación: SIEMPRE visible en el formulario. El
+                    usuario confirma (clic/arrastrar) antes de poder guardar. */}
+                <div className="mt-1">
+                  <p className="block text-sm font-medium text-gray-700 mb-1">
+                    Punto de entrega *
+                  </p>
+                  <MapContainer
+                    center={
+                      form.latitude
+                        ? [Number(form.latitude), Number(form.longitude)]
+                        : [14.6339, -89.9886]
+                    }
+                    zoom={16}
+                    style={{ height: 260, minHeight: 0 }}
+                    className="rounded-xl z-0"
+                  >
+                    <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                    <MapClickPlacer onPick={pickCoords} />
+                    {form.latitude && form.longitude && (
+                      <Marker
+                        position={[
+                          Number(form.latitude),
+                          Number(form.longitude),
+                        ]}
+                        icon={PIN_ICON}
+                        draggable
+                        eventHandlers={{
+                          dragend: (e) => {
+                            const { lat, lng } = e.target.getLatLng();
+                            pickCoords(lat, lng);
+                          },
+                        }}
+                      />
+                    )}
+                  </MapContainer>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Arrastra el marcador o haz clic en el mapa para fijar la
+                    ubicación exacta.
+                  </p>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Latitud * (Jalapa ~14.63)
+                    Latitud *
                   </label>
                   <input
                     type="number"
                     step="any"
-                    required
+                    readOnly
                     value={form.latitude}
-                    onChange={(e) =>
-                      setForm({ ...form, latitude: e.target.value })
-                    }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    aria-label="Latitud (autocompletada desde el mapa)"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl bg-gray-50 text-gray-600 outline-none"
                     placeholder="14.6339"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Longitud * (Jalapa ~-89.98)
+                    Longitud *
                   </label>
                   <input
                     type="number"
                     step="any"
-                    required
+                    readOnly
                     value={form.longitude}
-                    onChange={(e) =>
-                      setForm({ ...form, longitude: e.target.value })
-                    }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    aria-label="Longitud (autocompletada desde el mapa)"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl bg-gray-50 text-gray-600 outline-none"
                     placeholder="-89.9886"
                   />
                 </div>
@@ -222,7 +360,8 @@ export default function ClientsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={saving}
+                  // Obliga a buscar/confirmar la ubicación en el mapa antes de guardar.
+                  disabled={!form.latitude || !form.longitude || saving}
                   className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition shadow"
                 >
                   {saving ? 'Guardando...' : editing ? 'Guardar cambios' : 'Crear'}

@@ -15,6 +15,7 @@ class OrderStatus(str, enum.Enum):
     asignado = "asignado"
     en_ruta = "en_ruta"
     entregado = "entregado"
+    fallido = "fallido"
     cancelado = "cancelado"
 
 

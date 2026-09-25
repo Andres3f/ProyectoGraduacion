@@ -3,13 +3,15 @@ from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models.route import Route
+from app.models.route import Route, RouteStatus
 from app.models.route_stop import RouteStop
 from app.models.order import Order
 from app.models.user import User, RoleEnum
+from app.models.vehicle import Vehicle
 from app.auth.dependencies import require_role
 from app.services.metrics import compare_before_after, estimate_savings
 
@@ -120,6 +122,55 @@ def _route_dashboard_row(db: Session, r: Route) -> dict:
         row["distance_before_km"] = 0
         row["distance_after_km"] = r.total_distance_km or 0
     return row
+
+
+# KPIs del día para el panel principal del planificador/admin (DashboardPage):
+# contadores en vivo de la operación, usados por las tarjetas del inicio.
+@router.get("/summary")
+def get_summary(
+    db: Session = Depends(get_db),
+    _: User = Depends(
+        require_role([RoleEnum.admin, RoleEnum.planificador, RoleEnum.gerente])
+    ),
+):
+    """Contadores operativos del día: pedidos, rutas, flota y entregas."""
+    today = date.today()
+    pedidos_hoy = (
+        db.query(func.count(Order.id))
+        .filter(func.date(Order.created_at) == today)
+        .scalar()
+        or 0
+    )
+    # "Activas": las planificadas y las que ya están en ejecución.
+    rutas_activas = (
+        db.query(func.count(Route.id))
+        .filter(
+            Route.status.in_([RouteStatus.planificada, RouteStatus.en_progreso])
+        )
+        .scalar()
+        or 0
+    )
+    # Flota dada de alta (los vehículos inactivos no participan).
+    vehiculos = (
+        db.query(func.count(Vehicle.id))
+        .filter(Vehicle.is_active.is_(True))
+        .scalar()
+        or 0
+    )
+    # Entregas confirmadas por el conductor en el día de hoy.
+    entregas_hoy = (
+        db.query(func.count(RouteStop.id))
+        .filter(RouteStop.status == "entregado")
+        .filter(func.date(RouteStop.delivered_at) == today)
+        .scalar()
+        or 0
+    )
+    return {
+        "pedidos_hoy": pedidos_hoy,
+        "rutas_activas": rutas_activas,
+        "vehiculos": vehiculos,
+        "entregas_hoy": entregas_hoy,
+    }
 
 
 # KPIs agregados del rango; solo gerentes y admins.

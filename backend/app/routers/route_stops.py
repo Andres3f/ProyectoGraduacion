@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.models.order import OrderStatus
 from app.models.route import Route, RouteStatus
 from app.models.route_stop import RouteStop
 from app.models.user import User, RoleEnum
@@ -53,6 +54,17 @@ def update_stop_status(
     # Solo una entrega registra timestamp; una fallida lo limpia.
     stop.status = status
     stop.delivered_at = func.now() if status == "entregado" else None
+
+    # Sincroniza el estado del pedido con el resultado registrado por el
+    # conductor. Sin esto, la lista de pedidos y el dashboard seguirían
+    # mostrando "en_ruta" aunque la entrega ya fue resuelta.
+    if stop.order:
+        target = (
+            OrderStatus.entregado if status == "entregado" else OrderStatus.fallido
+        )
+        stop.order.status = target
+        db.add(stop.order)
+
     db.add(stop)
     db.flush()
 

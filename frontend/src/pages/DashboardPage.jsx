@@ -1,17 +1,35 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 
-// Tarjetas de estadísticas resumidas mostradas en el panel (datos de ejemplo por ahora).
-const stats = [
-  { label: 'Pedidos hoy', value: '—', icon: '📦' },
-  { label: 'Rutas activas', value: '—', icon: '🗺️' },
-  { label: 'Vehículos', value: '—', icon: '🚛' },
-  { label: 'Entregas', value: '—', icon: '✅' },
+// Tarjetas de estadísticas resumidas mostradas en el panel. Cada una lee su
+// contador del endpoint /dashboard/summary (datos reales del día en curso).
+const STAT_CARDS = [
+  { label: 'Pedidos hoy', key: 'pedidos_hoy', icon: '📦' },
+  { label: 'Rutas activas', key: 'rutas_activas', icon: '🗺️' },
+  { label: 'Vehículos', key: 'vehiculos', icon: '🚛' },
+  { label: 'Entregas', key: 'entregas_hoy', icon: '✅' },
 ];
 
 /* Panel principal del usuario: saludo personalizado, estadísticas y acceso rápido. */
 export default function DashboardPage() {
   const { user } = useAuth();
+  // Contadores del día; null mientras no hayan llegado (se muestran "—").
+  const [summary, setSummary] = useState(null);
+
+  // Obtiene los KPIs del día al montar y cada 60s para reflejar el avance
+  // de los conductores sin recargar la página.
+  useEffect(() => {
+    const load = () =>
+      api
+        .get('/dashboard/summary')
+        .then((res) => setSummary(res.data))
+        .catch(() => setSummary(null));
+    load();
+    const timer = setInterval(load, 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -23,13 +41,15 @@ export default function DashboardPage() {
 
       {/* Tarjetas de estadísticas generales */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-        {stats.map((s) => (
+        {STAT_CARDS.map((s) => (
           <div
             key={s.label}
             className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition"
           >
             <div className="text-3xl mb-2">{s.icon}</div>
-            <p className="text-2xl font-bold text-gray-900">{s.value}</p>
+            <p className="text-2xl font-bold text-gray-900">
+              {summary ? (summary[s.key] ?? '—') : '—'}
+            </p>
             <p className="text-sm text-gray-500">{s.label}</p>
           </div>
         ))}

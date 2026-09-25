@@ -1,4 +1,8 @@
-"""Tests del CRUD de clientes + PostGIS nearby (OPT-8)."""
+"""Tests del CRUD de clientes + PostGIS nearby (OPT-8) + geocoding."""
+
+from unittest.mock import patch
+
+from app.services.ors_client import ORSError
 
 
 def _make_client(client, headers, **overrides):
@@ -118,3 +122,60 @@ def test_nearby_clients(client, admin_headers):
         headers=admin_headers,
     )
     assert len(resp.json()) == 2
+
+
+# ── Geocoding (feature/geocoding-clientes) ─────────────────────────────
+
+MOCK_CANDIDATES = [
+    {"label": "5ta Calle 2-30, Zona 1, Jalapa, Guatemala", "lat": 14.6350,
+     "lng": -89.9880, "confidence": 0.9, "source": "ors"},
+    {"label": "5a Avenida 2-30, Jalapa, Guatemala", "lat": 14.6310,
+     "lng": -89.9920, "confidence": 0.6, "source": "ors"},
+]
+
+
+def test_geocode_returns_candidates(client, admin_headers):
+    # Mockea el proveedor: nunca llamar a ORS/Nominatim real en los tests.
+    with patch("app.routers.clients.geocode_address", return_value=MOCK_CANDIDATES):
+        resp = client.get(
+            "/api/clients/geocode?q=5ta+calle+2-30", headers=admin_headers
+        )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 2
+    assert results[0]["lat"] == 14.6350
+    assert results[0]["source"] == "ors"
+
+
+def test_geocode_rejects_too_short_query(client, admin_headers):
+    resp = client.get("/api/clients/geocode?q=ab", headers=admin_headers)
+    assert resp.status_code == 400
+
+
+def test_geocode_returns_empty_list_when_both_providers_fail(
+    client, admin_headers
+):
+    # ORS y Nominatim caídos → la API responde 200 con [], no un 500.
+    with patch(
+        "app.routers.clients.geocode_address",
+        side_effect=ORSError("ambos proveedores caídos"),
+    ):
+        resp = client.get(
+            "/api/clients/geocode?q=5ta+calle+2-30", headers=admin_headers
+        )
+    assert resp.status_code == 200
+    assert resp.json()["results"] == []
+
+
+def test_geocode_requires_authentication(client):
+    resp = client.get("/api/clients/geocode?q=5ta+calle+2-30")
+    assert resp.status_code == 401
+
+
+def test_client_creation_still_requires_coordinates(client, admin_headers):
+    # El geocoding es una ayuda del frontend: el contrato del backend sigue
+    # exigiendo lat/lng al crear clientes.
+    resp = client.post(
+        "/api/clients/", json={"name": "X", "address": "Y"}, headers=admin_headers
+    )
+    assert resp.status_code == 422
