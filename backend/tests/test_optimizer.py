@@ -1,10 +1,13 @@
-"""Tests del motor de optimización VRP (OPT-10)."""
+"""Tests del motor de optimización VRP (OPT-10) con depósito principal único."""
 
 from unittest.mock import patch
 
 from app.services.optimizer import optimize_routes
 from app.services.metrics import compare_before_after
 from app.services.ors_client import ORSError
+from app.database import SessionLocal
+from app.models.depot import Depot
+from app.models.vehicle import Vehicle
 
 
 class _Order:
@@ -192,3 +195,112 @@ def test_uses_ors_matrix_when_available():
         result = optimize_routes(orders, vehicles)
     assert result["success"] is True
     assert result["matrix_source"] == "ors"
+
+
+# ── Depósito principal (feature/depositos-mapa) ─────────────────
+
+
+def _force_haversine():
+    # Sin mockear la matriz: ORS_API_KEY="" (conftest) hace que el optimizador
+    # caiga a Haversine, dando señal geométrica real para los depósitos.
+    return patch("app.services.optimizer.settings.ORS_API_KEY", "")
+
+
+def test_optimizer_uses_default_depot_when_vehicle_has_none():
+    # 1 vehículo sin depot_id → debe usar el depósito is_default=True.
+    db = SessionLocal()
+    try:
+        default_depot = db.query(Depot).filter(Depot.is_default == True).first()
+        assert default_depot, "conftest debe garantizar el depósito default"
+
+        vehicle = Vehicle(
+            plate="T-MDEP1", capacity_kg=10000, status="disponible",
+            is_active=True,
+        )
+        db.add(vehicle)
+        db.commit()
+        db.refresh(vehicle)
+
+        orders = _orders((14.62, -89.98, 500, None, 10))
+        with _force_haversine():
+            result = optimize_routes(orders, [vehicle], db)
+
+        assert result["success"] is True
+        assert result["routes"][0]["depot_id"] == default_depot.id
+    finally:
+        db.close()
+
+
+def test_all_routes_depart_from_main_depot_even_if_vehicle_has_own():
+    # Todos los pedidos deben salir del depósito principal, aunque un vehículo
+    # tenga su propio depot_id asignado: el optimizador lo ignora.
+    db = SessionLocal()
+    try:
+        default_depot = db.query(Depot).filter(Depot.is_default == True).first()
+        assert default_depot, "conftest debe garantizar el depósito default"
+
+        depot_b = Depot(
+            name="Patio Norte", address="Jalapa Norte",
+            latitude=14.80, longitude=-89.70, is_default=False,
+        )
+        db.add(depot_b)
+        db.commit()
+        db.refresh(depot_b)
+
+        v_a = Vehicle(
+            plate="T-UNICO1", capacity_kg=10000, status="disponible",
+            is_active=True,
+        )
+        v_b = Vehicle(
+            plate="T-UNICO2", capacity_kg=10000, status="disponible",
+            is_active=True, depot_id=depot_b.id,
+        )
+        db.add_all([v_a, v_b])
+        db.commit()
+        db.refresh(v_a)
+        db.refresh(v_b)
+
+        # Pedido pegado al depósito secundario: aun así la ruta debe salir
+        # del depósito principal, por lo que la primera parada de la ruta del
+        # vehículo B es ese pedido "lejano" y no el que está junto al principal.
+        orders = _orders(
+            (default_depot.latitude + 0.005, default_depot.longitude, 500, None, 10),
+            (depot_b.latitude - 0.005, depot_b.longitude, 500, None, 10),
+        )
+        with _force_haversine():
+            result = optimize_routes(orders, [v_a, v_b], db)
+
+        assert result["success"] is True
+        assert result["routes"]
+        for route in result["routes"]:
+            assert route["depot_id"] == default_depot.id, (
+                "toda ruta debe partir del depósito principal"
+            )
+    finally:
+        db.close()
+
+
+
+def test_optimizer_fails_gracefully_without_default_depot():
+    # Sin depósito is_default → success=False con mensaje claro, no un 500.
+    db = SessionLocal()
+    try:
+        db.query(Depot).delete()
+        db.commit()
+
+        vehicle = Vehicle(
+            plate="T-NDEF1", capacity_kg=10000, status="disponible",
+            is_active=True,
+        )
+        db.add(vehicle)
+        db.commit()
+        db.refresh(vehicle)
+
+        orders = _orders((14.62, -89.98, 500, None, 10))
+        result = optimize_routes(orders, [vehicle], db)
+
+        assert result["success"] is False
+        assert "predeterminado" in result["message"].lower()
+        assert result["unassigned_order_ids"] == [1]
+    finally:
+        db.close()

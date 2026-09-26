@@ -8,9 +8,40 @@ import {
   useMap,
 } from 'react-leaflet';
 import L from 'leaflet';
+import { useTheme } from '../context/ThemeContext';
 
 // Coordenadas de referencia: centro de Jalapa para el mapa por defecto
 const JALAPA_CENTER = [14.6339, -89.9886];
+
+// Se usa el mismo proveedor de tiles en ambos temas (OpenStreetMap, sin API
+// key). En modo oscuro las tiles se oscurecen con un filtro CSS aplicado
+// únicamente a la capa de tiles: así los marcadores, las polilíneas de las
+// rutas y los popups conservan sus colores originales.
+const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
+// Alterna el filtro de la capa de tiles al cambiar de tema.
+function DarkTileFilter() {
+  const map = useMap();
+  const { theme } = useTheme();
+  useEffect(() => {
+    const tilePane = map.getPane('tilePane');
+    if (!tilePane) return;
+    tilePane.classList.toggle('dark-map-tiles', theme === 'dark');
+  }, [map, theme]);
+  return null;
+}
+
+// Capa base del mapa + filtro de tema.
+function ThemeTiles() {
+  return (
+    <>
+      <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+      <DarkTileFilter />
+    </>
+  );
+}
 
 // Paleta de colores para diferenciar rutas/vehículos en el mapa
 const COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c'];
@@ -28,6 +59,13 @@ function numberedIcon(number, color) {
   });
 }
 
+// Ícono distintivo para los depósitos (punto de salida/regreso de las rutas).
+const DEPOT_ICON = L.divIcon({
+  className: '',
+  html: '<div style="background:#1f2937;color:white;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.4);white-space:nowrap;">🏭 Depósito</div>',
+  iconAnchor: [8, 20],
+});
+
 // Normaliza las coordenadas de una parada a [lat, lng]
 // (soporta tanto `lat/lng` como `latitude/longitude`)
 function stopCoords(s) {
@@ -41,27 +79,39 @@ function stopCoordsWithin(s) {
 }
 
 // Ajusta automáticamente el encuadre del mapa para que todas las
-// paradas de las rutas queden visibles con un margen de 40px.
-function FitBounds({ routes }) {
+// paradas de las rutas y los depósitos queden visibles con un margen de 40px.
+function FitBounds({ routes, depots }) {
   const map = useMap();
-  const positions = routes.flatMap((r) => r.stops ?? []).flatMap(stopCoords);
-  const key = positions.join(',');
+  const bounds = [
+    ...routes.flatMap(
+      (r) =>
+        (r.stops ?? []).map(stopCoords).filter((c) => c.every(Number.isFinite))
+    ),
+    ...depots.map((d) => [d.latitude, d.longitude]),
+  ];
+  const key = bounds.flat().join(',');
   useEffect(() => {
-    if (positions.filter(Number.isFinite).length > 1) {
-      const bounds = routes
-        .flatMap((r) => r.stops ?? [])
-        .map(stopCoords)
-        .filter((c) => c.every(Number.isFinite));
+    if (bounds.length > 1) {
       map.fitBounds(bounds, { padding: [40, 40] });
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, key]);
   return null;
 }
 
+// Resuelve el depósito de una ruta: el asignado (route.depot_id) o, si no
+// existe, el depósito predeterminado del sistema.
+function depotForRoute(route, depots) {
+  if (route?.depot_id) {
+    const found = depots.find((d) => d.id === route.depot_id);
+    if (found) return found;
+  }
+  return depots.find((d) => d.is_default) || null;
+}
+
 // Componente principal del mapa: dibuja rutas, paradas numeradas y pedidos sueltos.
-export default function MapView({ routes = [], markers = [], onSelectStop }) {
-  const hasRouteStops = routes.some((r) => (r.stops?.length ?? 0) > 1);
+export default function MapView({ routes = [], markers = [], depots = [], onSelectStop }) {
+  const hasRouteStops = routes.some((r) => (r.stops?.length ?? 0) > 0);
 
   return (
     <MapContainer
@@ -69,20 +119,38 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
       zoom={13}
       className="h-[500px] rounded-xl shadow-lg z-0"
     >
-      {/* Capa base de OpenStreetMap */}
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      {/* Capa base del mapa, adaptada al tema */}
+      <ThemeTiles />
 
-      {hasRouteStops && <FitBounds routes={routes} />}
+      {(hasRouteStops || depots.length > 0) && (
+        <FitBounds routes={routes} depots={depots} />
+      )}
+
+      {/* Depósitos: punto de partida de las rutas */}
+      {depots.map((d) => (
+        <Marker
+          key={`depot-${d.id}`}
+          position={[d.latitude, d.longitude]}
+          icon={DEPOT_ICON}
+        >
+          <Popup>
+            <strong>{d.name}</strong>
+            {d.is_default && (
+              <span className="block text-xs text-gray-500 dark:text-gray-400">predeterminado</span>
+            )}
+            {d.address && <p className="text-xs text-gray-500 dark:text-gray-400">{d.address}</p>}
+          </Popup>
+        </Marker>
+      ))}
 
       {/* Polilíneas por vehículo */}
       {routes.map((route, i) => {
         const validStops = (route.stops ?? []).filter((s) =>
           stopCoordsWithin(s)
         );
-        if (validStops.length < 2) return null;
+        // Una sola parada también es una ruta válida: se dibuja el tramo
+        // depósito -> punto de entrega (y el regreso en el fallback).
+        if (validStops.length < 1) return null;
 
         if (route.route_geometry?.coordinates?.length > 1) {
           // Geometría real de ORS: GeoJSON LineString [[lng,lat], ...]
@@ -98,11 +166,20 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
           );
         }
 
-        // Fallback: línea recta punteada entre paradas (aproximación).
+        // Fallback: línea recta punteada desde el depósito de la ruta, por
+        // cada parada y de regreso al depósito (aproximación).
+        const depot = depotForRoute(route, depots);
+        const depotPos = depot
+          ? [[depot.latitude, depot.longitude]]
+          : [];
         return (
           <Polyline
             key={`line-${route.id || i}`}
-            positions={validStops.map(stopCoords)}
+            positions={[
+              ...depotPos,
+              ...validStops.map(stopCoords),
+              ...depotPos,
+            ]}
             pathOptions={{
               color: COLORS[i % COLORS.length],
               weight: 4,
@@ -130,7 +207,7 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
               <div className="flex items-center justify-between gap-2">
                 <strong>{stop.client_name}</strong>
                 {stop.eta && (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
                     {new Date(stop.eta).toLocaleTimeString('es-GT', {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -139,9 +216,14 @@ export default function MapView({ routes = [], markers = [], onSelectStop }) {
                 )}
               </div>
               <p className="text-sm">Parada {idx + 1}</p>
-              {stop.address && <p className="text-xs text-gray-500">{stop.address}</p>}
+              {stop.address && <p className="text-xs text-gray-500 dark:text-gray-400">{stop.address}</p>}
               {stop.weight_kg != null && (
                 <p className="text-xs">⚖️ {stop.weight_kg} kg</p>
+              )}
+              {stop.notes && (
+                <p className="mt-1 text-xs bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded px-1.5 py-1">
+                  📝 {stop.notes}
+                </p>
               )}
             </Popup>
           </Marker>
@@ -174,26 +256,26 @@ export function RouteStepsPanel({ route }) {
   if (!steps.length) return null;
 
   return (
-    <div className="mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="mt-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
       {/* Botón para expandir/colapsar las instrucciones */}
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-left"
       >
-        <span className="font-semibold text-gray-900">🧭 Instrucciones de manejo</span>
-        <span className="text-gray-400">{open ? '▼' : '▲'}</span>
+        <span className="font-semibold text-gray-900 dark:text-gray-100">🧭 Instrucciones de manejo</span>
+        <span className="text-gray-400 dark:text-gray-500">{open ? '▼' : '▲'}</span>
       </button>
       {open && (
-        <ol className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+        <ol className="divide-y divide-gray-100 dark:divide-gray-700 max-h-72 overflow-y-auto">
           {/* Cada indicación muestra distancia y duración estimada */}
           {steps.map((s, i) => (
             <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold shrink-0">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 text-xs font-bold shrink-0">
                 {i + 1}
               </span>
               <div className="min-w-0">
-                <p className="text-gray-800">{s.instruction}</p>
-                <p className="text-xs text-gray-400">
+                <p className="text-gray-800 dark:text-gray-100">{s.instruction}</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500">
                   {(s.distance_m / 1000).toFixed(2)} km ·{' '}
                   {Math.round(s.duration_s / 60)} min
                 </p>

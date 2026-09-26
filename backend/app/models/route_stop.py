@@ -50,3 +50,12 @@ class RouteStop(Base):
     @property
     def weight_kg(self) -> float:
         return self.order.weight_kg if self.order else 0.0
+
+    @property
+    def notes(self) -> str:
+        """Notas de entrega del pedido (p. ej. instrucciones de acceso).
+
+        El conductor las ve en "Mi Ruta" y en el popup del mapa, por eso se
+        derivan aquí en lugar de consultarlas aparte.
+        """
+        return self.order.notes if self.order and self.order.notes else ""

@@ -14,6 +14,35 @@ function getErrorMessage(err, fallback) {
     : fallback;
 }
 
+/* Convierte una hora "HH:MM" a minutos desde las 00:00 (14:00 -> 840).
+   Devuelve null si el valor está vacío o no tiene el formato esperado. */
+function hhmmToMinutes(value) {
+  if (!value) return null;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 24 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+/* Convierte minutos desde las 00:00 a una hora "HH:MM" (840 -> "14:00"). */
+function minutesToHhmm(minutes) {
+  if (minutes === null || minutes === undefined) return '';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/* Despliega la ventana de entrega de un pedido en formato de horas. */
+function formatTimeWindow(o) {
+  const start = o.time_window_start;
+  const end = o.time_window_end;
+  if (start === null || start === undefined) return 'Sin restricción';
+  if (end === null || end === undefined) return minutesToHhmm(start);
+  return `${minutesToHhmm(start)} – ${minutesToHhmm(end)}`;
+}
+
 /* Página de pedidos: lista, crea y sube pedidos por archivo (CSV/Excel). */
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -56,9 +85,22 @@ export default function OrdersPage() {
   // Carga inicial de datos al montar la página.
   useEffect(loadData, []);
 
-  // Crea un nuevo pedido enviando el formulario al backend.
+  // Crea un nuevo pedido enviando el formulario al backend. Las horas se
+  // capturan como "HH:MM" y se envían como minutos desde las 00:00.
   const handleCreate = async (e) => {
     e.preventDefault();
+    const windowStart = hhmmToMinutes(form.time_window_start);
+    const windowEnd = hhmmToMinutes(form.time_window_end);
+    if (
+      windowStart !== null &&
+      windowEnd !== null &&
+      windowEnd <= windowStart
+    ) {
+      setUploadErrors(
+        'La hora de fin de la ventana de entrega debe ser posterior a la de inicio.'
+      );
+      return;
+    }
     setSaving(true);
     setUploadErrors(null);
     try {
@@ -66,10 +108,8 @@ export default function OrdersPage() {
         client_id: Number(form.client_id),
         weight_kg: Number(form.weight_kg),
         volume_m3: Number(form.volume_m3 || 0),
-        time_window_start: form.time_window_start
-          ? Number(form.time_window_start)
-          : null,
-        time_window_end: form.time_window_end ? Number(form.time_window_end) : null,
+        time_window_start: windowStart,
+        time_window_end: windowEnd,
         service_time_min: form.service_time_min
           ? Number(form.service_time_min)
           : null,
@@ -123,10 +163,10 @@ export default function OrdersPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">📦 Pedidos</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">📦 Pedidos</h1>
         {/* Acciones: cargar pedidos por archivo y crear pedido manual */}
         <div className="flex gap-3">
-          <label className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl cursor-pointer transition">
+          <label className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-xl cursor-pointer transition">
             ⬆️ Cargar CSV
             <input
               ref={fileInputRef}
@@ -138,7 +178,7 @@ export default function OrdersPage() {
           </label>
           <button
             onClick={() => setShowCreate(true)}
-            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-xl transition shadow"
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 text-white text-sm font-medium rounded-xl transition shadow"
           >
             + Nuevo pedido
           </button>
@@ -147,19 +187,19 @@ export default function OrdersPage() {
 
       {/* Avisos de subida, resultado y errores del último intento */}
       {uploading && (
-        <div className="mb-4 bg-blue-50 text-blue-700 text-sm rounded-lg p-3">
+        <div className="mb-4 bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 text-sm rounded-lg p-3">
           Subiendo archivo...
         </div>
       )}
 
       {uploadResult && (
-        <div className="mb-4 bg-green-50 text-green-700 text-sm rounded-lg p-3">
+        <div className="mb-4 bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-400 text-sm rounded-lg p-3">
           ✅ {uploadResult.created} pedido(s) creado(s) correctamente.
         </div>
       )}
 
       {uploadErrors && (
-        <div className="mb-4 bg-red-50 text-red-700 text-sm rounded-lg p-3">
+        <div className="mb-4 bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 text-sm rounded-lg p-3">
           <p className="font-semibold mb-1">No se pudo completar la operación:</p>
           {Array.isArray(uploadErrors) ? (
             <ul className="list-disc list-inside space-y-0.5">
@@ -176,26 +216,26 @@ export default function OrdersPage() {
       {/* Modal de creación manual de un pedido */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Nuevo pedido</h2>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">Nuevo pedido</h2>
               <button
                 onClick={() => setShowCreate(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 ✕
               </button>
             </div>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                   Cliente *
                 </label>
                 <select
                   required
                   value={form.client_id}
                   onChange={(e) => setForm({ ...form, client_id: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                 >
                   <option value="">Selecciona un cliente</option>
                   {clients.map((c) => (
@@ -207,7 +247,7 @@ export default function OrdersPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Peso (kg) *
                   </label>
                   <input
@@ -219,12 +259,12 @@ export default function OrdersPage() {
                     onChange={(e) =>
                       setForm({ ...form, weight_kg: e.target.value })
                     }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                     placeholder="ej. 50"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Volumen (m³)
                   </label>
                   <input
@@ -235,63 +275,68 @@ export default function OrdersPage() {
                     onChange={(e) =>
                       setForm({ ...form, volume_m3: e.target.value })
                     }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                     placeholder="ej. 2"
                   />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ventana inicio (min)
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                    Entrega desde
                   </label>
                   <input
-                    type="number"
+                    type="time"
+                    step="900"
                     value={form.time_window_start}
                     onChange={(e) =>
                       setForm({ ...form, time_window_start: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                    placeholder="0"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ventana fin (min)
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                    Entrega hasta
                   </label>
                   <input
-                    type="number"
+                    type="time"
+                    step="900"
                     value={form.time_window_end}
                     onChange={(e) =>
                       setForm({ ...form, time_window_end: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                    placeholder="480"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Servicio (min)
                   </label>
                   <input
                     type="number"
+                    min="0"
                     value={form.service_time_min}
                     onChange={(e) =>
                       setForm({ ...form, service_time_min: e.target.value })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                     placeholder="10"
                   />
                 </div>
               </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Ventana de entrega en horas. Déjala vacía si el pedido puede
+                entregarse a cualquier hora.
+              </p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                   Notas
                 </label>
                 <textarea
                   value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                   rows="2"
                 />
               </div>
@@ -299,14 +344,14 @@ export default function OrdersPage() {
                 <button
                   type="button"
                   onClick={() => setShowCreate(false)}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition"
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-xl transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition shadow"
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition shadow"
                 >
                   {saving ? 'Guardando...' : 'Crear pedido'}
                 </button>
@@ -321,28 +366,42 @@ export default function OrdersPage() {
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-brand-500 border-t-transparent" />
         </div>
       ) : orders.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">No hay pedidos registrados</div>
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">No hay pedidos registrados</div>
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+            <thead className="bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 uppercase text-xs">
               <tr>
                 <th className="px-6 py-3 text-left">ID</th>
                 <th className="px-6 py-3 text-left">Cliente</th>
                 <th className="px-6 py-3 text-left">Dirección</th>
+                <th className="px-6 py-3 text-left">Notas</th>
                 <th className="px-6 py-3 text-right">Peso (kg)</th>
+                <th className="px-6 py-3 text-left">Ventana de entrega</th>
                 <th className="px-6 py-3 text-center">Estado</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {orders.map((o) => (
-                <tr key={o.id} className="hover:bg-gray-50 transition">
+                <tr key={o.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                   <td className="px-6 py-4 font-medium">{o.id}</td>
                   <td className="px-6 py-4">{o.client_name}</td>
-                  <td className="px-6 py-4 text-gray-500">{o.address}</td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400">{o.address}</td>
+                  <td className="px-6 py-4 max-w-xs">
+                    {o.notes ? (
+                      <span className="block truncate" title={o.notes}>
+                        {o.notes}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300 dark:text-gray-600">—</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-right">{o.weight_kg}</td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
+                    {formatTimeWindow(o)}
+                  </td>
                   <td className="px-6 py-4 text-center">
-                    <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-brand-100 text-brand-700">
+                    <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300">
                       {o.status}
                     </span>
                   </td>

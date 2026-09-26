@@ -14,16 +14,20 @@ function getErrorMessage(err) {
 /* Página del conductor: muestra su ruta asignada y permite marcar el estado de cada parada. */
 export default function MyRoutePage() {
   const [route, setRoute] = useState(null);
+  const [depots, setDepots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [updating, setUpdating] = useState(null);
 
-  // Obtiene la ruta asignada al conductor autenticado.
+  // Obtiene la ruta asignada al conductor autenticado y el depósito principal
+  // (necesario para dibujar el pin de salida y llegada).
   const loadRoute = () => {
     setLoading(true);
-    api
-      .get('/routes/my-route')
-      .then((res) => setRoute(res.data))
+    Promise.all([api.get('/routes/my-route'), api.get('/depots/')])
+      .then(([routeRes, depotsRes]) => {
+        setRoute(routeRes.data);
+        setDepots(depotsRes.data);
+      })
       .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setLoading(false));
   };
@@ -60,10 +64,10 @@ export default function MyRoutePage() {
   if (error && !route) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">🚚 Mi Ruta</h1>
-        <div className="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 text-center">
-          <p className="text-gray-500 mb-2">Aún no tienes una ruta asignada.</p>
-          <p className="text-sm text-gray-400">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-4">🚚 Mi Ruta</h1>
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-sm border border-gray-100 dark:border-gray-700 text-center">
+          <p className="text-gray-500 dark:text-gray-400 mb-2">Aún no tienes una ruta asignada.</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">
             Cuando el planificador genere una ruta para tu vehículo, aparecerá aquí.
           </p>
         </div>
@@ -80,37 +84,37 @@ export default function MyRoutePage() {
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">🚚 Mi Ruta</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">🚚 Mi Ruta</h1>
+          <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
             {route?.name || `Ruta #${route?.id}`} · {route?.stops?.length ?? 0}{' '}
             paradas · {route?.status}
           </p>
         </div>
         {/* Insignia cuando la ruta está completada */}
         {resolved && (
-          <span className="px-4 py-2 rounded-full bg-green-100 text-green-700 text-sm font-semibold">
+          <span className="px-4 py-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400 text-sm font-semibold">
             ✅ Ruta completada
           </span>
         )}
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 text-red-700 text-sm rounded-lg p-3">
+        <div className="mb-4 bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 text-sm rounded-lg p-3">
           {error}
         </div>
       )}
 
       {/* Mapa pequeño con solo esta ruta */}
       {(route?.stops?.length ?? 0) > 0 && (
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6">
-          <MapView routes={[{ ...route, stops: route.stops }]} />
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
+          <MapView routes={[{ ...route, stops: route.stops }]} depots={depots} />
           <RouteStepsPanel route={route} />
         </div>
       )}
 
       {/* Lista de paradas en orden */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <ul className="divide-y divide-gray-100">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+        <ul className="divide-y divide-gray-100 dark:divide-gray-700">
           {(route?.stops || []).map((stop, idx) => {
             // Estado actual de la parada para decidir qué mostrar.
             const done = stop.status === 'entregado';
@@ -125,12 +129,23 @@ export default function MyRoutePage() {
                     {idx + 1}
                   </span>
                   <div className="min-w-0">
-                    <p className="font-medium text-gray-900 truncate">
+                    <p className="font-medium text-gray-900 dark:text-gray-100 truncate">
                       {stop.client_name}
                     </p>
-                    <p className="text-sm text-gray-500 truncate">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
                       {stop.address} · {stop.weight_kg} kg
                     </p>
+                    {/* Notas de entrega: instrucciones que el conductor debe leer
+                        antes de llegar al punto (acceso, contacto, Etc.). */}
+                    {stop.notes && (
+                      <p className="mt-2 flex items-start gap-1.5 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-sm rounded-lg px-3 py-2">
+                        <span aria-hidden>📝</span>
+                        <span className="min-w-0">
+                          <span className="font-semibold">Nota: </span>
+                          {stop.notes}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -141,14 +156,14 @@ export default function MyRoutePage() {
                       <button
                         onClick={() => markStatus(stop.id, 'entregado')}
                         disabled={updating === stop.id}
-                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
+                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 dark:hover:bg-green-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
                       >
                         {updating === stop.id ? '...' : '✅ Entregado'}
                       </button>
                       <button
                         onClick={() => markStatus(stop.id, 'fallido')}
                         disabled={updating === stop.id}
-                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
+                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 dark:hover:bg-red-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
                       >
                         {updating === stop.id ? '...' : '✖ Fallido'}
                       </button>
@@ -157,8 +172,8 @@ export default function MyRoutePage() {
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold ${
                         done
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-red-100 text-red-700'
+                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
+                          : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-400'
                       }`}
                     >
                       {done ? '✅ Entregado' : '✖ Fallido'}

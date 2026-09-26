@@ -14,7 +14,9 @@ import app.models.vehicle  # noqa: F401
 import app.models.route  # noqa: F401
 import app.models.route_stop  # noqa: F401
 import app.models.client  # noqa: F401
+import app.models.depot  # noqa: F401
 from app.models.route import Route
+from app.models.depot import Depot
 from app.services.ors_client import ORSError, get_route_geometry
 from app.config import settings
 
@@ -37,19 +39,29 @@ def main() -> None:
 
         updated = 0
         for route in routes:
-            # Construye la secuencia de paradas: depósito primero, luego en orden.
+            # Construye la secuencia de paradas en orden de visita.
             stops = sorted(route.stops, key=lambda s: s.sequence)
-            coords = [{"lat": settings.DEPOT_LAT, "lng": settings.DEPOT_LNG}]
-            coords += [
+            stop_coords = [
                 {"lat": s.order.latitude, "lng": s.order.longitude}
                 for s in stops
                 if s.order and s.order.latitude is not None
             ]
-            if len(coords) < 2:
+            if not stop_coords:
                 logger.warning(
-                    "Ruta #%s no tiene coordenadas suficientes; se omite.", route.id
+                    "Ruta #%s no tiene paradas con coordenadas; se omite.", route.id
                 )
                 continue
+
+            # El depósito de la ruta; si no tiene, el predeterminado de la BD.
+            depot = db.get(Depot, route.depot_id) if route.depot_id else None
+            if depot is None:
+                depot = db.query(Depot).filter(Depot.is_default == True).first()
+            depot_coords = {
+                "lat": depot.latitude if depot else settings.DEPOT_LAT,
+                "lng": depot.longitude if depot else settings.DEPOT_LNG,
+            }
+            # Viaje completo de ida y vuelta: depósito -> paradas -> depósito.
+            coords = [depot_coords] + stop_coords + [depot_coords]
 
             try:
                 geo = get_route_geometry(coords)

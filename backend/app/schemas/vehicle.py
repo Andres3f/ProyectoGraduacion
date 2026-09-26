@@ -15,6 +15,7 @@ class VehicleCreate(BaseModel):
     capacity_kg: float = Field(10000, gt=0)
     capacity_m3: float = Field(20, gt=0)
     driver_id: Optional[int] = None
+    depot_id: Optional[int] = None
 
     # Validator: normaliza la placa (mayúsculas/trim) y valida el formato.
     @field_validator("plate")
@@ -37,6 +38,7 @@ class VehicleUpdate(BaseModel):
     status: Optional[VehicleStatus] = None
     is_active: Optional[bool] = None
     driver_id: Optional[int] = None
+    depot_id: Optional[int] = None
 
     # Igual normalización de placa que en Create, tolerando valor nulo.
     @field_validator("plate")
@@ -62,5 +64,6 @@ class VehicleOut(BaseModel):
     status: VehicleStatus
     is_active: bool
     driver_id: Optional[int]
+    depot_id: Optional[int]
 
     model_config = ConfigDict(from_attributes=True)

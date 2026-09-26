@@ -47,6 +47,24 @@ function getErrorMessage(err) {
   return JSON.stringify(detail);
 }
 
+// En las descargas el cuerpo de la respuesta (incluso el error) llega como Blob,
+// así que hay que leerlo y parsearlo para poder mostrar el mensaje real del
+// backend en vez de un "error inesperado" que oculta la causa.
+async function getDownloadErrorMessage(err) {
+  const data = err?.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text());
+      if (typeof parsed?.detail === 'string') return parsed.detail;
+      if (parsed?.detail) return JSON.stringify(parsed.detail);
+    } catch {
+      // El cuerpo no era JSON: se cae al mensaje genérico de abajo.
+    }
+    return `No se pudo generar el reporte (error ${err?.response?.status}).`;
+  }
+  return getErrorMessage(err);
+}
+
 /* Dashboard gerencial: KPIs, exportación y gráficas por rango de fechas. */
 export default function ManagerDashboardPage() {
   // Rango de fechas seleccionado (por defecto: últimos 7 días).
@@ -88,23 +106,28 @@ export default function ManagerDashboardPage() {
   }, [dateFrom, dateTo]);
 
   // Descarga el reporte del rango actual en el formato indicado (Excel o PDF).
-  const download = (format) => {
-    const url = `/api/dashboard/export?format=${format}&date_from=${dateFrom}&date_to=${dateTo}`;
-    api
-      .get(url, { responseType: 'blob' })
-      .then((res) => {
-        const blobUrl = URL.createObjectURL(res.data);
-        const link = document.createElement('a');
-        const disposition = res.headers['content-disposition'] || '';
-        const match = /filename="?([^"]+)"?/.exec(disposition);
-        link.href = blobUrl;
-        link.download = match ? match[1] : `optirutas_${dateFrom}_${dateTo}.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(blobUrl);
-      })
-      .catch((err) => setError(getErrorMessage(err)));
+  // La ruta va SIN el prefijo /api porque la instancia de axios ya lo antepone
+  // (services/api.js). Ponerlo aquí produciría /api/api/... y un 404.
+  const download = async (format) => {
+    setError(null);
+    try {
+      const res = await api.get('/dashboard/export', {
+        params: { format, date_from: dateFrom, date_to: dateTo },
+        responseType: 'blob',
+      });
+      const blobUrl = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      const disposition = res.headers['content-disposition'] || '';
+      const match = /filename="?([^"]+)"?/.exec(disposition);
+      link.href = blobUrl;
+      link.download = match ? match[1] : `optirutas_${dateFrom}_${dateTo}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      setError(await getDownloadErrorMessage(err));
+    }
   };
 
   // Datos del gráfico de barras: distancia antes vs después por ruta.
@@ -174,42 +197,42 @@ export default function ManagerDashboardPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">📈 Dashboard del Gerente</h1>
-      <p className="text-gray-500 mb-6">
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1">📈 Dashboard del Gerente</h1>
+      <p className="text-gray-500 dark:text-gray-400 mb-6">
         Indicadores clave del negocio en un rango de fechas
       </p>
 
       {/* Selectores de rango de fechas (desde/hasta) */}
       <div className="flex flex-wrap items-end gap-3 mb-8">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Desde</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Desde</label>
           <input
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm"
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Hasta</label>
+          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Hasta</label>
           <input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm"
           />
         </div>
         {/* Botones de exportación del reporte */}
         <div className="flex gap-2 ml-auto">
           <button
             onClick={() => download('xlsx')}
-            className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+            className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 dark:hover:bg-emerald-500"
           >
             Descargar Excel
           </button>
           <button
             onClick={() => download('pdf')}
-            className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+            className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 dark:hover:bg-red-500"
           >
             Descargar PDF
           </button>
@@ -217,7 +240,7 @@ export default function ManagerDashboardPage() {
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 text-red-700 text-sm rounded-lg p-3">{error}</div>
+        <div className="mb-4 bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 text-sm rounded-lg p-3">{error}</div>
       )}
 
       {loading ? (
@@ -276,12 +299,12 @@ export default function ManagerDashboardPage() {
           </div>
 
           {/* Gráfico de barras: comparación de distancia antes/después de optimizar */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
               Distancia antes vs después por ruta (km)
             </h2>
             {routes.length === 0 ? (
-              <p className="text-gray-400 text-sm">No hay rutas en el rango seleccionado</p>
+              <p className="text-gray-400 dark:text-gray-500 text-sm">No hay rutas en el rango seleccionado</p>
             ) : (
               <Bar
                 data={chartData}
@@ -301,12 +324,12 @@ export default function ManagerDashboardPage() {
           {/* Gráficos secundarios: línea de reducción y pastel de entregas */}
           <div className="grid md:grid-cols-2 gap-6 mt-6">
             {/* Gráfico de línea: evolución del porcentaje de reducción */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                 Evolución de la reducción (%)
               </h2>
               {timeseries.dates.length === 0 ? (
-                <p className="text-gray-400 text-sm">
+                <p className="text-gray-400 dark:text-gray-500 text-sm">
                   No hay datos en el rango seleccionado
                 </p>
               ) : (
@@ -322,15 +345,15 @@ export default function ManagerDashboardPage() {
             </div>
 
             {/* Gráfico de pastel: distribución de entregas */}
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                 Distribución de entregas
               </h2>
               {(kpis?.delivery_distribution?.entregado ?? 0) +
                 (kpis?.delivery_distribution?.fallido ?? 0) +
                 (kpis?.delivery_distribution?.pendiente ?? 0) ===
               0 ? (
-                <p className="text-gray-400 text-sm">
+                <p className="text-gray-400 dark:text-gray-500 text-sm">
                   No hay paradas en el rango seleccionado
                 </p>
               ) : (

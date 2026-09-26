@@ -14,11 +14,13 @@ def _make_client(client, headers, name, lat, lng):
     return resp.json()["id"]
 
 
-def _make_order(client, headers, client_id, weight_kg, time_window=None):
+def _make_order(client, headers, client_id, weight_kg, time_window=None, notes=None):
     payload = {"client_id": client_id, "weight_kg": weight_kg}
     if time_window:
         payload["time_window_start"] = time_window[0]
         payload["time_window_end"] = time_window[1]
+    if notes:
+        payload["notes"] = notes
     resp = client.post("/api/orders/", json=payload, headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()["id"]
@@ -172,6 +174,29 @@ def test_optimize_creates_routestops_and_sets_en_ruta(client, admin_headers):
     for oid in [o1, o2]:
         o = client.get(f"/api/orders/{oid}", headers=admin_headers).json()
         assert o["status"] == "en_ruta"
+
+
+def test_route_stop_exposes_order_notes_to_driver(client, admin_headers):
+    # Las notas del pedido deben llegar en la ruta para que el conductor las
+    # lea en "Mi Ruta": se derivan del pedido y se exponen en RouteStopOut.
+    c1, c2, c3, v1, v2 = _setup(client, admin_headers)
+    nota = "Entrada por la callejula; timbre en mal estado. Llamar al 5555-1234."
+    o1 = _make_order(client, admin_headers, c1, 1000, notes=nota)
+    o2 = _make_order(client, admin_headers, c2, 2000)
+
+    resp = client.post(
+        "/api/routes/optimize",
+        json={"order_ids": [o1, o2], "vehicle_ids": [v1]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    stops = resp.json()["routes"][0]["stops"]
+    assert len(stops) == 2
+
+    notes_por_pedido = {s["order_id"]: s["notes"] for s in stops}
+    assert notes_por_pedido[o1] == nota
+    # Un pedido sin notas no rompe la respuesta: devuelve vacío.
+    assert notes_por_pedido[o2] == ""
 
 
 def test_get_route_returns_stops_from_relation(client, admin_headers):

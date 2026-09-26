@@ -3,6 +3,7 @@ import enum
 from sqlalchemy import (
     Column, Integer, String, Float, Enum, Boolean, DateTime, ForeignKey, func,
 )
+from sqlalchemy.orm import relationship
 from app.database import Base
 
 
@@ -27,9 +28,13 @@ class Vehicle(Base):
     capacity_m3 = Column(Float, nullable=False, default=20)
     # Conductor asignado de forma permanente (nullable: aún sin conductor).
     driver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    # Depósito de salida/regreso. NULL → usa el depósito is_default del sistema.
+    depot_id = Column(Integer, ForeignKey("depots.id"), nullable=True)
     status = Column(
         Enum(VehicleStatus), nullable=False, default=VehicleStatus.disponible
     )
     # Baja lógica: los vehículos inactivos no se usan en la optimización.
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    depot = relationship("Depot", foreign_keys=[depot_id])

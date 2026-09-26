@@ -9,7 +9,13 @@ el ahorro de combustible usando un costo por kilómetro configurable.
 from typing import List
 
 from app.config import settings
-from app.services.optimizer import _haversine, _depot
+from app.services.optimizer import _haversine
+
+
+def _default_depot_point() -> dict:
+    # Coordenada base de comparación (settings), usada como origen/retorno de
+    # la ruta "naive". El optimizador ya resuelve el depósito real por ruta.
+    return {"lat": settings.DEPOT_LAT, "lng": settings.DEPOT_LNG}
 
 
 def _point(stop) -> dict:
@@ -30,7 +36,7 @@ def _total_distance_in_order(stops: List) -> float:
     Usa distancia Haversine con el mismo factor de corrección de calles que
     el optimizador, para comparar manzanas con manzanas.
     """
-    depot = _depot()
+    depot = _default_depot_point()
     total = 0.0
     prev = depot
     # Suma la distancia entre paradas consecutivas partiendo del depósito.

@@ -11,6 +11,7 @@ import AddUserPage from './pages/AddUserPage';
 import MyRoutePage from './pages/MyRoutePage';
 import VehiclesPage from './pages/VehiclesPage';
 import ClientsPage from './pages/ClientsPage';
+import DepotsPage from './pages/DepotsPage';
 import ReportsPage from './pages/ReportsPage';
 import ManagerDashboardPage from './pages/ManagerDashboardPage';
 
@@ -28,7 +29,7 @@ function App() {
   const { user } = useAuth();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {user && <Navbar />}
       <main className={user ? 'pt-16' : ''}>
         <Routes>
@@ -51,6 +52,7 @@ function App() {
           <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
             <Route path="/vehicles" element={<VehiclesPage />} />
             <Route path="/clients" element={<ClientsPage />} />
+            <Route path="/depots" element={<DepotsPage />} />
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/users/new" element={<AddUserPage />} />
           </Route>

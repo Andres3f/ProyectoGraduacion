@@ -28,6 +28,8 @@ class RouteStopOut(BaseModel):
     latitude: float = 0.0
     longitude: float = 0.0
     weight_kg: float = 0.0
+    # Notas de entrega del pedido: instrucciones de acceso, contacto, etc.
+    notes: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -39,6 +41,7 @@ class RouteOut(BaseModel):
     name: Optional[str]
     vehicle_id: Optional[int]
     driver_id: Optional[int]
+    depot_id: Optional[int] = None
     stops: List[RouteStopOut] = []
     route_geometry: Optional[dict] = None
     steps: Optional[List[dict]] = None
