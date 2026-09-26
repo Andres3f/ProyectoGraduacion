@@ -43,7 +43,11 @@ class RouteOut(BaseModel):
     driver_id: Optional[int]
     depot_id: Optional[int] = None
     stops: List[RouteStopOut] = []
+    # Geometría del trayecto de ida (depósito -> última parada).
     route_geometry: Optional[dict] = None
+    # Geometría del trayecto de regreso (última parada -> depósito). El mapa la
+    # dibuja en otro color para distinguirla de la ida.
+    route_geometry_return: Optional[dict] = None
     steps: Optional[List[dict]] = None
     total_distance_km: Optional[float]
     total_duration_min: Optional[float]

@@ -1,5 +1,7 @@
-"""Regenera la geometría por calle (route_geometry + steps) de las rutas que
-no la tienen guardada (rutas creadas cuando ORS/OSRM no respondía).
+"""Regenera la geometría por calle (route_geometry + route_geometry_return +
+steps) de las rutas que no la tienen guardada (rutas creadas cuando ORS/OSRM no
+respondía). También completa la geometría de regreso de las rutas que solo
+tienen la de ida.
 
 Uso (desde backend/):
     python -m scripts.backfill_routes_geometry
@@ -27,11 +29,14 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     db = SessionLocal()
     try:
-        # Selecciona únicamente las rutas que aún no tienen geometría guardada.
+        # Selecciona las rutas sin geometría de ida y las que tienen ida pero
+        # les falta el regreso (creadas antes de separar ambos tramos).
         routes = [
             r
             for r in db.query(Route).all()
-            if r.route_geometry is None or r.route_geometry == "null"
+            if r.route_geometry is None
+            or r.route_geometry == "null"
+            or r.route_geometry_return is None
         ]
         if not routes:
             logger.info("No hay rutas sin geometría. Nada que hacer.")
@@ -60,28 +65,38 @@ def main() -> None:
                 "lat": depot.latitude if depot else settings.DEPOT_LAT,
                 "lng": depot.longitude if depot else settings.DEPOT_LNG,
             }
-            # Viaje completo de ida y vuelta: depósito -> paradas -> depósito.
-            coords = [depot_coords] + stop_coords + [depot_coords]
+            # Los dos tramos por separado: depósito -> paradas (ida) y
+            # última parada -> depósito (vuelta).
+            coords_out = [depot_coords] + stop_coords
+            coords_back = stop_coords + [depot_coords]
 
             try:
-                geo = get_route_geometry(coords)
+                geo_out = get_route_geometry(coords_out)
+                geo_back = get_route_geometry(coords_back)
             except ORSError as exc:
                 logger.warning("Ruta #%s: no se pudo generar geometría: %s", route.id, exc)
                 continue
 
-            # Persiste geometría, pasos y duración estimados; marca la fuente.
-            route.route_geometry = geo["geometry"]
-            route.steps = geo["steps"]
-            route.total_duration_min = round(geo["duration_s"] / 60, 1)
+            # Persiste ambas geometrías, los pasos de cada trayecto y la
+            # duración total de la ida y vuelta.
+            route.route_geometry = geo_out["geometry"]
+            route.route_geometry_return = geo_back["geometry"]
+            route.steps = [{**s, "leg": "ida"} for s in geo_out["steps"]] + [
+                {**s, "leg": "vuelta"} for s in geo_back["steps"]
+            ]
+            route.total_duration_min = round(
+                (geo_out["duration_s"] + geo_back["duration_s"]) / 60, 1
+            )
             route.distance_source = "osrm"
             db.add(route)
             updated += 1
             logger.info(
-                "Ruta #%s: geometría regenerada (%s puntos, %s pasos, %.1f km).",
+                "Ruta #%s: geometría regenerada (ida %s puntos, vuelta %s puntos, %s pasos, %.1f km).",
                 route.id,
-                len(geo["geometry"].get("coordinates", [])),
-                len(geo["steps"]),
-                geo["distance_m"] / 1000,
+                len(geo_out["geometry"].get("coordinates", [])),
+                len(geo_back["geometry"].get("coordinates", [])),
+                len(route.steps),
+                (geo_out["distance_m"] + geo_back["distance_m"]) / 1000,
             )
 
         # Aplica todos los cambios en una sola transacción al final.

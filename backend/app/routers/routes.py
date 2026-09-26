@@ -139,9 +139,10 @@ def _apply_ors_duration_and_etas(
     recta de cada tramo (el backend no guarda la geometría tramo a tramo, así
     que esta es la aproximación más simple y determinista).
 
-    ``coords`` es la secuencia completa de la ruta, con el depósito al inicio
-    y al final. El tramo de regreso (última parada -> depósito) no tiene fila
-    de parada asociada, por lo que ``zip`` lo ignora sin perder los ETA.
+    ``coords`` es la secuencia del trayecto de **ida** (depósito al inicio y
+    última parada al final) y ``duration_s`` su duración: los ETA son horas de
+    llegada a las paradas, que todas ocurren antes de salir de nuevo del
+    depósito. El regreso se contabiliza aparte en ``total_duration_min``.
     """
     rows = sorted(stop_rows, key=lambda r: r.sequence)
     # Proporción de cada tramo según su distancia en línea recta.
@@ -163,6 +164,12 @@ def _apply_ors_duration_and_etas(
     for row, leg_dist in zip(rows, leg_dists):
         cumul_min += (duration_s / 60.0) * (leg_dist / total_dist)
         row.eta = base + timedelta(minutes=cumul_min)
+
+
+def _tag_steps(steps: List[dict], leg: str) -> List[dict]:
+    """Marca cada instrucción de manejo con el trayecto al que pertenece
+    ("ida" o "vuelta") para que el panel del conductor las pueda separar."""
+    return [{**s, "leg": leg} for s in steps]
 
 
 # NOTA (OPT-11): se mantiene el endpoint `/api/routes/optimize` (recomendado
@@ -244,24 +251,39 @@ def create_optimized_route(
 
         # Geometría real por calle (ORS): si falla, la ruta se crea igual y el
         # mapa dibuja línea recta como respaldo. Nunca rompemos la creación.
+        # Se piden los dos tramos por separado (ida y vuelta) para que el mapa
+        # pueda dibujarlos con colores distintos.
         try:
-            # Viaje completo de ida y vuelta: depósito -> paradas -> depósito.
             depot_coords = _resolve_depot_coords(db, route_data.get("depot_id"))
-            coords = [depot_coords] + [
+            stop_coords = [
                 {"lat": s["lat"], "lng": s["lng"]} for s in route_data["stops"]
-            ] + [depot_coords]
-            geo = get_route_geometry(coords)
-            route.route_geometry = geo["geometry"]
-            route.steps = geo["steps"]
-            route.total_duration_min = round(geo["duration_s"] / 60, 1)
+            ]
+            # Ida: depósito -> paradas. Vuelta: última parada -> depósito.
+            coords_out = [depot_coords] + stop_coords
+            coords_back = stop_coords + [depot_coords]
+            geo_out = get_route_geometry(coords_out)
+            geo_back = get_route_geometry(coords_back)
+
+            route.route_geometry = geo_out["geometry"]
+            route.route_geometry_return = geo_back["geometry"]
+            # Las instrucciones de ambos tramos, etiquetadas por trayecto.
+            route.steps = _tag_steps(geo_out["steps"], "ida") + _tag_steps(
+                geo_back["steps"], "vuelta"
+            )
+            # La duración total de la ruta es la ida y vuelta completas.
+            route.total_duration_min = round(
+                (geo_out["duration_s"] + geo_back["duration_s"]) / 60, 1
+            )
+            # Los ETA se reparten solo sobre el trayecto de ida.
             _apply_ors_duration_and_etas(
-                created_stop_rows, coords, geo["duration_s"]
+                created_stop_rows, coords_out, geo_out["duration_s"]
             )
         except ORSError as exc:
             logger.warning(
                 "No se pudo obtener geometría real de ORS (%s). Línea recta.", exc
             )
             route.route_geometry = None
+            route.route_geometry_return = None
             route.steps = None
 
         created_routes.append(route)

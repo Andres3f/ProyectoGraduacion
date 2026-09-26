@@ -304,20 +304,26 @@ def test_conductor_cannot_assign_driver(client, admin_headers, conductor_headers
 
 
 def _mock_geometry(monkeypatch):
-    geo = {
-        "geometry": {"type": "LineString", "coordinates": [[-89.98, 14.63], [-89.97, 14.63]]},
-        "distance_m": 1500,
-        "duration_s": 300,
-        "steps": [{"instruction": "Continue on road", "distance": 1500, "duration": 300}],
-    }
+    """Sustituye a ORS por una geometría fija,-distinta para cada tramo, para
+    poder comprobar que la ida y la vuelta se guardan por separado."""
+    calls = []
 
     def fake_get_route_geometry(coordinates):
-        return geo
+        calls.append(coordinates)
+        return {
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[c["lng"], c["lat"]] for c in coordinates],
+            },
+            "distance_m": 1500,
+            "duration_s": 300,
+            "steps": [{"instruction": "Continue on road", "distance": 1500, "duration": 300}],
+        }
 
     monkeypatch.setattr("app.routers.routes.get_route_geometry", fake_get_route_geometry)
 
     monkeypatch.setattr("app.services.ors_client.settings.ORS_API_KEY", "test-key")
-    return geo
+    return calls
 
 
 def test_route_uses_real_geometry_when_ors_available(client, admin_headers, monkeypatch):
@@ -335,8 +341,45 @@ def test_route_uses_real_geometry_when_ors_available(client, admin_headers, monk
     route = resp.json()["routes"][0]
     assert route["route_geometry"] is not None
     assert route["route_geometry"]["type"] == "LineString"
-    assert len(route["steps"]) == 1
-    assert route["total_duration_min"] == 5.0  # 300s / 60
+    # 1 paso por trayecto (ida y vuelta), cada uno etiquetado.
+    assert len(route["steps"]) == 2
+    assert [s["leg"] for s in route["steps"]] == ["ida", "vuelta"]
+    # La duración total de la ruta es la suma de ida (300s) y vuelta (300s).
+    assert route["total_duration_min"] == 10.0
+
+
+def test_route_splits_outbound_and_return_geometry(client, admin_headers, monkeypatch):
+    """La ida y la vuelta se piden a ORS por separado y se guardan en campos
+    distintos, para que el mapa las pueda dibujar con colores diferentes."""
+    calls = _mock_geometry(monkeypatch)
+    c1, c2, c3, v1, v2 = _setup(client, admin_headers)
+    o1 = _make_order(client, admin_headers, c1, 1000)
+    o2 = _make_order(client, admin_headers, c2, 500)
+
+    resp = client.post(
+        "/api/routes/optimize",
+        json={"order_ids": [o1, o2], "vehicle_ids": [v1]},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    route = resp.json()["routes"][0]
+
+    # Dos llamadas a ORS: la de ida y la de vuelta.
+    assert len(calls) == 2
+    coords_out, coords_back = calls
+    # La ida arranca en el depósito; la vuelta termina en el mismo depósito.
+    assert coords_out[0] == coords_back[-1]
+    # Ambas visitas las mismas paradas, en el mismo orden de entrega; lo que
+    # cambia es el punto de partida (depósito) y el de llegada (depósito).
+    assert coords_back[:-1] == coords_out[1:]
+
+    # Cada tramo conserva su propia geometría.
+    assert route["route_geometry"]["coordinates"] == [
+        [c["lng"], c["lat"]] for c in coords_out
+    ]
+    assert route["route_geometry_return"]["coordinates"] == [
+        [c["lng"], c["lat"]] for c in coords_back
+    ]
 
 
 def test_route_falls_back_to_straight_line_without_ors(client, admin_headers, monkeypatch):
@@ -355,4 +398,5 @@ def test_route_falls_back_to_straight_line_without_ors(client, admin_headers, mo
     assert resp.status_code == 200
     route = resp.json()["routes"][0]
     assert route["route_geometry"] is None
+    assert route["route_geometry_return"] is None
     assert len(route["stops"]) == 1
