@@ -68,12 +68,15 @@ def update_stop_status(
     db.add(stop)
     db.flush()
 
-    # Si todas las paradas de la ruta están resueltas, la ruta se completa.
+    # Cuando todas las paradas quedan resueltas la ruta aún NO se completa:
+    # el camión sigue en camino de retorno al depósito. Pasa a `en_progreso`
+    # y el conductor confirma el regreso con `PUT /api/routes/{id}/complete`,
+    # que es lo que marca la ruta como `completada`.
     route = stop.route
     if route and all(
         s.status in ("entregado", "fallido") for s in route.stops
     ):
-        route.status = RouteStatus.completada
+        route.status = RouteStatus.en_progreso
         db.add(route)
 
     db.commit()

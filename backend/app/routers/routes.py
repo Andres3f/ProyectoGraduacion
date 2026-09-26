@@ -42,8 +42,9 @@ def list_routes(
     return db.query(Route).all()
 
 
-# Consulta exclusiva del conductor: devuelve SU ruta en progreso (o, si no
-# existe, la planificada más reciente).
+# Consulta exclusiva del conductor: devuelve SU ruta en curso (o, si no
+# existe, la planificada más reciente). Si ya terminó todas sus rutas, devuelve
+# la última que completó para que vea el resumen de su trabajo.
 @router.get("/my-route", response_model=RouteOut)
 def get_my_route(
     db: Session = Depends(get_db),
@@ -68,6 +69,17 @@ def get_my_route(
                 Route.status == RouteStatus.planificada,
             )
             .order_by(Route.created_at.desc())
+            .first()
+        )
+    # Prioridad 3: la última ruta que ya terminó, como histórico inmediato.
+    if not route:
+        route = (
+            db.query(Route)
+            .filter(
+                Route.driver_id == current_user.id,
+                Route.status == RouteStatus.completada,
+            )
+            .order_by(Route.updated_at.desc())
             .first()
         )
     if not route:
@@ -321,6 +333,59 @@ def create_optimized_route(
         metrics=metrics,
         matrix_source=result.get("matrix_source", "haversine"),
     )
+
+
+# Cierre de ruta: el conductor confirma que ya volvió al depósito. Hasta que no
+# lo haga la ruta sigue `en_progreso` y el mapa permanece visible, porque el
+# trayecto de regreso todavía no ha terminado.
+@router.put("/{route_id}/complete", response_model=RouteOut)
+def complete_route(
+    route_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role([RoleEnum.conductor])),
+):
+    """Marca la ruta del conductor como completada al regresar al depósito.
+
+    Solo el conductor asignado puede cerrarla, y solo cuando todas sus paradas
+    ya están resueltas: si faltara alguna, el regreso no se puede confirmar.
+    """
+    route = (
+        db.query(Route)
+        .filter(Route.id == route_id, Route.driver_id == current_user.id)
+        .first()
+    )
+    # 404 (y no 403) para no confirmar la existencia de rutas ajenas.
+    if not route:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+
+    # Idempotente: cerrar una ruta ya cerrada no es un error.
+    if route.status == RouteStatus.completada:
+        return route
+
+    pending = [
+        s for s in route.stops if s.status not in ("entregado", "fallido")
+    ]
+    if pending:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Aún tienes {len(pending)} parada(s) sin resolver. "
+                "Resuélvelas antes de confirmar el regreso al depósito."
+            ),
+        )
+
+    route.status = RouteStatus.completada
+    db.add(route)
+
+    from app.services.audit import log_action
+
+    log_action(
+        db, current_user.id, "completar_ruta",
+        entidad="route", entidad_id=route_id,
+    )
+    db.commit()
+    db.refresh(route)
+    return route
 
 
 # Detalle de ruta: cualquier autenticado, pero los conductores solo la propia.

@@ -16,8 +16,24 @@ export default function MyRoutePage() {
   const [route, setRoute] = useState(null);
   const [depots, setDepots] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [closing, setClosing] = useState(false);
   const [error, setError] = useState(null);
   const [updating, setUpdating] = useState(null);
+  // El conductor confirma que volvió al depósito: la ruta pasa a completada y
+  // con ella desaparece el mapa del trayecto de regreso.
+  const confirmReturn = async () => {
+    setClosing(true);
+    setError(null);
+    try {
+      const res = await api.put(`/routes/${route.id}/complete`);
+      setRoute(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setClosing(false);
+    }
+  };
+
 
   // Obtiene la ruta asignada al conductor autenticado y el depósito principal
   // (necesario para dibujar el pin de salida y llegada).
@@ -27,8 +43,18 @@ export default function MyRoutePage() {
       .then(([routeRes, depotsRes]) => {
         setRoute(routeRes.data);
         setDepots(depotsRes.data);
+        setError(null);
       })
-      .catch((err) => setError(getErrorMessage(err)))
+      .catch((err) => {
+        // Un 404 aquí significa que el conductor no tiene ninguna ruta (ni
+        // activa ni completada); no es un fallo de la pantalla.
+        if (err?.response?.status === 404) {
+          setRoute(null);
+          setError(null);
+        } else {
+          setError(getErrorMessage(err));
+        }
+      })
       .finally(() => setLoading(false));
   };
 
@@ -76,9 +102,16 @@ export default function MyRoutePage() {
   }
 
   // Indica si todas las paradas ya fueron resueltas (entregadas o fallidas).
-  const resolved = (route?.stops || []).every((s) =>
+  const stops = route?.stops || [];
+  const resolved = stops.length > 0 && stops.every((s) =>
     ['entregado', 'fallido'].includes(s.status)
   );
+  // El mapa solo se muestra mientras el viaje está en marcha: al confirmar el
+  // regreso al depósito la ruta queda completada y el mapa desaparece.
+  const finished = route?.status === 'completada';
+  const showMap = stops.length > 0 && !finished;
+  const deliveredCount = stops.filter((s) => s.status === 'entregado').length;
+  const failedCount = stops.filter((s) => s.status === 'fallido').length;
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -86,16 +119,20 @@ export default function MyRoutePage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">🚚 Mi Ruta</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-            {route?.name || `Ruta #${route?.id}`} · {route?.stops?.length ?? 0}{' '}
+            {route?.name || `Ruta #${route?.id}`} · {stops.length}{' '}
             paradas · {route?.status}
           </p>
         </div>
-        {/* Insignia cuando la ruta está completada */}
-        {resolved && (
-          <span className="px-4 py-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400 text-sm font-semibold">
-            ✅ Ruta completada
+        {/* Insignia de resumen: al terminar todas las paradas, o al cerrar la ruta */}
+        {finished ? (
+          <span className="px-4 py-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-semibold">
+            🏁 Ruta finalizada
           </span>
-        )}
+        ) : resolved ? (
+          <span className="px-4 py-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400 text-sm font-semibold">
+            ✅ Entregas completadas · regresando al depósito
+          </span>
+        ) : null}
       </div>
 
       {error && (
@@ -104,10 +141,45 @@ export default function MyRoutePage() {
         </div>
       )}
 
-      {/* Mapa pequeño con solo esta ruta */}
-      {(route?.stops?.length ?? 0) > 0 && (
+      {/* Panel de ruta finalizada: el mapa ya se ocultó porque el conductor
+          confirmó su regreso al depósito. */}
+      {finished && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-sm border border-gray-100 dark:border-gray-700 text-center mb-6">
+          <p className="text-5xl mb-3" aria-hidden>🏭</p>
+          <p className="text-gray-900 dark:text-gray-100 font-semibold mb-1">
+            Volviste al depósito. ¡Ruta cerrada!
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {deliveredCount} entrega(s) realizadas
+            {failedCount > 0 && ` · ${failedCount} fallida(s)`}
+            {route?.total_distance_km != null &&
+              ` · ${route.total_distance_km} km recorridos`}
+          </p>
+        </div>
+      )}
+
+      {/* Botón de cierre: solo aparece cuando ya no quedan paradas por resolver,
+          para que el mapa siga visible durante el trayecto de regreso. */}
+      {resolved && !finished && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
+          <p className="text-gray-700 dark:text-gray-300 text-sm mb-3">
+            Ya hiciste todas las entregas. Cuando regreses al depósito, confirma
+            el retorno para cerrar la ruta y quitar el mapa.
+          </p>
+          <button
+            onClick={confirmReturn}
+            disabled={closing}
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition"
+          >
+            {closing ? 'Cerrando...' : '🏠 Ya regresé al depósito'}
+          </button>
+        </div>
+      )}
+
+      {/* Mapa pequeño con solo esta ruta (se oculta al cerrar la ruta) */}
+      {showMap && (
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
-          <MapView routes={[{ ...route, stops: route.stops }]} depots={depots} />
+          <MapView routes={[{ ...route, stops }]} depots={depots} />
           <RouteStepsPanel route={route} />
         </div>
       )}
@@ -115,7 +187,7 @@ export default function MyRoutePage() {
       {/* Lista de paradas en orden */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-          {(route?.stops || []).map((stop, idx) => {
+          {stops.map((stop, idx) => {
             // Estado actual de la parada para decidir qué mostrar.
             const done = stop.status === 'entregado';
             const failed = stop.status === 'fallido';

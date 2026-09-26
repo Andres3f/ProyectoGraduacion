@@ -278,7 +278,8 @@ def test_full_e2e_delivery_flow(client, admin_headers):
     assert still_pending["status"] == "planificada"
     route_id = still_pending["id"]
 
-    # Marca la segunda parada → todas resueltas → la ruta se completa.
+    # Marca la segunda parada → todas resueltas. La ruta queda `en_progreso`
+    # (el camión aún tiene que regresar al depósito), NO completada.
     stop_b = still_pending["stops"][1]
     resp = client.put(
         f"/api/route-stops/{stop_b['id']}/status",
@@ -287,10 +288,107 @@ def test_full_e2e_delivery_flow(client, admin_headers):
     )
     assert resp.status_code == 200
 
-    # Una ruta completada ya no se expone en /my-route (que solo devuelve
-    # en_progreso/planificada), así que el admin la consulta directamente.
-    completed = client.get(f"/api/routes/{route_id}", headers=admin_headers).json()
-    assert completed["status"] == "completada"
+    # El conductor sigue viendo su ruta (y el mapa) mientras va de regreso.
+    returning = client.get("/api/routes/my-route", headers=driver_headers)
+    assert returning.status_code == 200
+    assert returning.json()["status"] == "en_progreso"
+    route_id = returning.json()["id"]
+
+    # Solo cuando confirma el regreso al depósito la ruta pasa a completada.
+    resp = client.put(f"/api/routes/{route_id}/complete", headers=driver_headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "completada"
+
+    # Tras cerrarla, /my-route devuelve la última ruta completada (histórico)
+    # en vez de un 404, para que el conductor vea el resumen de su jornada.
+    after = client.get("/api/routes/my-route", headers=driver_headers)
+    assert after.status_code == 200
+    assert after.json()["status"] == "completada"
+
+
+def test_complete_route_requires_all_stops_resolved(client, admin_headers):
+    """No se puede confirmar el regreso si quedan paradas sin resolver."""
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "partial")
+    v1, o1, o2 = _full_setup(client, admin_headers, driver_id, "partial")
+    body = _optimize(client, admin_headers, [o1, o2], v1)
+    route = body["routes"][0]
+    stop_id = route["stops"][0]["id"]
+
+    # Ni siquiera con las paradas pendientes se puede cerrar.
+    resp = client.put(f"/api/routes/{route['id']}/complete", headers=driver_headers)
+    assert resp.status_code == 400
+    assert "parada" in resp.json()["detail"].lower()
+
+    # Con una parada resuelta y otra pendiente, tampoco.
+    client.put(
+        f"/api/route-stops/{stop_id}/status",
+        params={"status": "entregado"},
+        headers=driver_headers,
+    )
+    resp = client.put(f"/api/routes/{route['id']}/complete", headers=driver_headers)
+    assert resp.status_code == 400
+
+    # Al resolver la última, el cierre funciona.
+    remaining = [
+        s for s in route["stops"] if s["id"] != stop_id
+    ][0]
+    client.put(
+        f"/api/route-stops/{remaining['id']}/status",
+        params={"status": "fallido"},
+        headers=driver_headers,
+    )
+    resp = client.put(f"/api/routes/{route['id']}/complete", headers=driver_headers)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "completada"
+
+
+def test_complete_route_is_idempotent_and_scoped_to_own_route(client, admin_headers):
+    """Cerrar dos veces no falla, y un conductor no puede cerrar rutas ajenas."""
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "idem")
+    other_id, other_headers = _create_conductor(client, admin_headers, "other")
+    v1, o1, _o2 = _full_setup(client, admin_headers, driver_id, "idem")
+
+    body = _optimize(client, admin_headers, [o1], v1)
+    route = body["routes"][0]
+    stop_id = route["stops"][0]["id"]
+    client.put(
+        f"/api/route-stops/{stop_id}/status",
+        params={"status": "entregado"},
+        headers=driver_headers,
+    )
+    # Otro conductor no puede cerrarla (404, no 403: no se confirma su existencia).
+    resp = client.put(f"/api/routes/{route['id']}/complete", headers=other_headers)
+    assert resp.status_code == 404
+
+    # El conductor dueño la cierra y puede volver a hacerlo sin error.
+    first = client.put(f"/api/routes/{route['id']}/complete", headers=driver_headers)
+    assert first.status_code == 200
+    second = client.put(f"/api/routes/{route['id']}/complete", headers=driver_headers)
+    assert second.status_code == 200
+    assert second.json()["status"] == "completada"
+
+
+def test_stop_status_keeps_map_after_page_reload(client, admin_headers):
+    """Regression: marcar una parada (entregado o fallido) no debe dejar al
+    conductor sin ruta al recargar, porque el mapa desaparecía."""
+    for status in ("entregado", "fallido"):
+        driver_id, driver_headers = _create_conductor(
+            client, admin_headers, f"reload{status}"
+        )
+        v1, o1, _o2 = _full_setup(client, admin_headers, driver_id, f"rl{status}")
+        body = _optimize(client, admin_headers, [o1], v1)
+        stop_id = body["routes"][0]["stops"][0]["id"]
+
+        assert client.put(
+            f"/api/route-stops/{stop_id}/status",
+            params={"status": status},
+            headers=driver_headers,
+        ).status_code == 200
+
+        # "Recarga de la página": el conductor vuelve a pedir su ruta.
+        mine = client.get("/api/routes/my-route", headers=driver_headers)
+        assert mine.status_code == 200, f"el mapa desaparece tras marcar {status}"
+        assert mine.json()["status"] == "en_progreso"
 
 
 def test_mark_fallido_propagates_to_order(client, admin_headers):
