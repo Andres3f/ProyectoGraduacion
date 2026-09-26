@@ -98,6 +98,20 @@ def _load_vehicles(db: Session, vehicle_ids: List[int]) -> List[Vehicle]:
     return vehicles
 
 
+# Resuelve el depósito principal de una ruta: el que tenga asignado y, si no
+# tiene (rutas antiguas), el predeterminado de la BD. Como último recurso usa la
+# coordenada de configuración, para no romper si la BD está vacía.
+def _resolve_depot_coords(db: Session, depot_id) -> dict:
+    depot = None
+    if depot_id:
+        depot = db.get(Depot, depot_id)
+    if depot is None:
+        depot = db.query(Depot).filter(Depot.is_default == True).first()
+    if depot is None:
+        return {"lat": settings.DEPOT_LAT, "lng": settings.DEPOT_LNG}
+    return {"lat": depot.latitude, "lng": depot.longitude}
+
+
 # Cálculo auxiliar de distancia geodésica (haversine) en línea recta.
 def _straight_leg_km(coord_a: dict, coord_b: dict) -> float:
     """Distancia en línea recta (km) entre dos coordenadas."""
@@ -121,9 +135,13 @@ def _apply_ors_duration_and_etas(
 ) -> None:
     """Sobrescribe total_duration_min y recalcula el ETA de cada parada.
 
-    Distribuye el tiempo real de ORS proporcional a la distancia en línea
+    Distribuye el tiempo real de ORS/OSRM proporcional a la distancia en línea
     recta de cada tramo (el backend no guarda la geometría tramo a tramo, así
     que esta es la aproximación más simple y determinista).
+
+    ``coords`` es la secuencia completa de la ruta, con el depósito al inicio
+    y al final. El tramo de regreso (última parada -> depósito) no tiene fila
+    de parada asociada, por lo que ``zip`` lo ignora sin perder los ETA.
     """
     rows = sorted(stop_rows, key=lambda r: r.sequence)
     # Proporción de cada tramo según su distancia en línea recta.
@@ -227,18 +245,11 @@ def create_optimized_route(
         # Geometría real por calle (ORS): si falla, la ruta se crea igual y el
         # mapa dibuja línea recta como respaldo. Nunca rompemos la creación.
         try:
-            # Cada ruta arranca desde SU depósito (el del vehículo o el default).
-            depot = (
-                db.get(Depot, route_data["depot_id"])
-                if route_data.get("depot_id") else None
-            )
-            depot_coords = {
-                "lat": depot.latitude if depot else settings.DEPOT_LAT,
-                "lng": depot.longitude if depot else settings.DEPOT_LNG,
-            }
+            # Viaje completo de ida y vuelta: depósito -> paradas -> depósito.
+            depot_coords = _resolve_depot_coords(db, route_data.get("depot_id"))
             coords = [depot_coords] + [
                 {"lat": s["lat"], "lng": s["lng"]} for s in route_data["stops"]
-            ]
+            ] + [depot_coords]
             geo = get_route_geometry(coords)
             route.route_geometry = geo["geometry"]
             route.steps = geo["steps"]

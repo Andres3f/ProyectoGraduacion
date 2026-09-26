@@ -1,4 +1,4 @@
-"""Tests del motor de optimización VRP (OPT-10) y multi-depósito."""
+"""Tests del motor de optimización VRP (OPT-10) con depósito principal único."""
 
 from unittest.mock import patch
 
@@ -197,21 +197,7 @@ def test_uses_ors_matrix_when_available():
     assert result["matrix_source"] == "ors"
 
 
-# ── Multi-depósito (feature/depositos-mapa) ────────────────────
-
-
-def _haversine_km(lat1, lng1, lat2, lng2):
-    import math
-
-    d_lat = math.radians(lat2 - lat1)
-    d_lng = math.radians(lng2 - lng1)
-    a = (
-        math.sin(d_lat / 2) ** 2
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(d_lng / 2) ** 2
-    )
-    return 6371 * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+# ── Depósito principal (feature/depositos-mapa) ─────────────────
 
 
 def _force_haversine():
@@ -245,13 +231,14 @@ def test_optimizer_uses_default_depot_when_vehicle_has_none():
         db.close()
 
 
-def test_optimizer_respects_vehicle_specific_depot():
-    # 2 depósitos lejanos, 2 vehículos cada uno con un depot_id distinto; cada
-    # ruta debe salir de SU depósito y su primera/última parada estar más cerca
-    # de SU depósito que del ajeno.
+def test_all_routes_depart_from_main_depot_even_if_vehicle_has_own():
+    # Todos los pedidos deben salir del depósito principal, aunque un vehículo
+    # tenga su propio depot_id asignado: el optimizador lo ignora.
     db = SessionLocal()
     try:
         default_depot = db.query(Depot).filter(Depot.is_default == True).first()
+        assert default_depot, "conftest debe garantizar el depósito default"
+
         depot_b = Depot(
             name="Patio Norte", address="Jalapa Norte",
             latitude=14.80, longitude=-89.70, is_default=False,
@@ -261,11 +248,11 @@ def test_optimizer_respects_vehicle_specific_depot():
         db.refresh(depot_b)
 
         v_a = Vehicle(
-            plate="T-MULT1", capacity_kg=10000, status="disponible",
+            plate="T-UNICO1", capacity_kg=10000, status="disponible",
             is_active=True,
         )
         v_b = Vehicle(
-            plate="T-MULT2", capacity_kg=10000, status="disponible",
+            plate="T-UNICO2", capacity_kg=10000, status="disponible",
             is_active=True, depot_id=depot_b.id,
         )
         db.add_all([v_a, v_b])
@@ -273,41 +260,25 @@ def test_optimizer_respects_vehicle_specific_depot():
         db.refresh(v_a)
         db.refresh(v_b)
 
-        # Pedido 1 pegado al depósito A; pedido 2 pegado al depósito B.
+        # Pedido pegado al depósito secundario: aun así la ruta debe salir
+        # del depósito principal, por lo que la primera parada de la ruta del
+        # vehículo B es ese pedido "lejano" y no el que está junto al principal.
         orders = _orders(
-            # depot A ≈ (14.6347, -89.9889)
             (default_depot.latitude + 0.005, default_depot.longitude, 500, None, 10),
-            # depot B ≈ (14.80, -89.70)
             (depot_b.latitude - 0.005, depot_b.longitude, 500, None, 10),
         )
         with _force_haversine():
             result = optimize_routes(orders, [v_a, v_b], db)
 
         assert result["success"] is True
-        routes_by_vehicle = {r["vehicle_id"]: r for r in result["routes"]}
-        assert v_a.id in routes_by_vehicle and v_b.id in routes_by_vehicle
-
-        # Cada ruta salió del depósito de SU vehículo.
-        assert routes_by_vehicle[v_a.id]["depot_id"] == default_depot.id
-        assert routes_by_vehicle[v_b.id]["depot_id"] == depot_b.id
-
-        depots_by_id = {default_depot.id: default_depot, depot_b.id: depot_b}
-        for v, route in routes_by_vehicle.items():
-            depot = depots_by_id[route["depot_id"]]
-            other = depots_by_id[
-                depot_b.id if depot.id == default_depot.id else default_depot.id
-            ]
-            first = route["stops"][0]
-            last = route["stops"][-1]
-            for stop in (first, last):
-                d_own = _haversine_km(stop["lat"], stop["lng"], depot.latitude, depot.longitude)
-                d_other = _haversine_km(stop["lat"], stop["lng"], other.latitude, other.longitude)
-                assert d_own < d_other, (
-                    f"La parada {stop['order_id']} debe estar más cerca de su "
-                    "depósito que del depósito del otro vehículo"
-                )
+        assert result["routes"]
+        for route in result["routes"]:
+            assert route["depot_id"] == default_depot.id, (
+                "toda ruta debe partir del depósito principal"
+            )
     finally:
         db.close()
+
 
 
 def test_optimizer_fails_gracefully_without_default_depot():
