@@ -126,50 +126,50 @@ export default function VehiclesPage() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">🚛 Vehículos</h1>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">🚛 Vehículos</h1>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-xl transition shadow"
+          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 text-white text-sm font-medium rounded-xl transition shadow"
         >
           + Nuevo vehículo
         </button>
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 text-red-700 text-sm rounded-lg p-3">
+        <div className="mb-4 bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 text-sm rounded-lg p-3">
           {error}
         </div>
       )}
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">
                 {editing ? 'Editar vehículo' : 'Nuevo vehículo'}
               </h2>
               <button
                 onClick={() => setShowForm(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 ✕
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                   Placa * (ej. C-4567)
                 </label>
                 <input
                   required
                   value={form.plate}
                   onChange={(e) => setForm({ ...form, plate: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                   placeholder="C-4567"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                   Descripción
                 </label>
                 <input
@@ -177,13 +177,13 @@ export default function VehiclesPage() {
                   onChange={(e) =>
                     setForm({ ...form, description: e.target.value })
                   }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                   placeholder="Camión 5 ton"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Capacidad (kg) *
                   </label>
                   <input
@@ -195,11 +195,11 @@ export default function VehiclesPage() {
                     onChange={(e) =>
                       setForm({ ...form, capacity_kg: e.target.value })
                     }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Capacidad (m³)
                   </label>
                   <input
@@ -210,12 +210,12 @@ export default function VehiclesPage() {
                     onChange={(e) =>
                       setForm({ ...form, capacity_m3: e.target.value })
                     }
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                   Conductor asignado
                 </label>
                 <select
@@ -223,7 +223,7 @@ export default function VehiclesPage() {
                   onChange={(e) =>
                     setForm({ ...form, driver_id: e.target.value })
                   }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                 >
                   <option value="">Sin conductor</option>
                   {drivers.map((d) => (
@@ -236,7 +236,7 @@ export default function VehiclesPage() {
               {editing && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                       Estado
                     </label>
                     <select
@@ -244,7 +244,7 @@ export default function VehiclesPage() {
                       onChange={(e) =>
                         setForm({ ...form, status: e.target.value })
                       }
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                      className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                     >
                       <option value="disponible">Disponible</option>
                       <option value="en_ruta">En ruta</option>
@@ -252,7 +252,7 @@ export default function VehiclesPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                       Activo
                     </label>
                     <select
@@ -263,7 +263,7 @@ export default function VehiclesPage() {
                           is_active: e.target.value === 'true',
                         })
                       }
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                      className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                     >
                       <option value="true">Sí</option>
                       <option value="false">No</option>
@@ -275,14 +275,14 @@ export default function VehiclesPage() {
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition"
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-xl transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition shadow"
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition shadow"
                 >
                   {saving ? 'Guardando...' : editing ? 'Guardar cambios' : 'Crear'}
                 </button>
@@ -297,14 +297,14 @@ export default function VehiclesPage() {
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-brand-500 border-t-transparent" />
         </div>
       ) : vehicles.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">
           No hay vehículos registrados
         </div>
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-x-auto">
           {/* Tabla con la flota de vehículos registrados */}
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+            <thead className="bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 uppercase text-xs">
               <tr>
                 <th className="px-6 py-3 text-left">Placa</th>
                 <th className="px-6 py-3 text-left">Descripción</th>
@@ -316,11 +316,11 @@ export default function VehiclesPage() {
                 <th className="px-6 py-3 text-right">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {vehicles.map((v) => (
-                <tr key={v.id} className="hover:bg-gray-50 transition">
+                <tr key={v.id} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                   <td className="px-6 py-4 font-medium">{v.plate}</td>
-                  <td className="px-6 py-4 text-gray-500">
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400">
                     {v.description || '—'}
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -331,13 +331,13 @@ export default function VehiclesPage() {
                     {mainDepot?.name || 'Depósito principal'}
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-brand-100 text-brand-700">
+                    <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300">
                       {v.status}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-center">
                     {v.is_active ? (
-                      <span className="text-green-600">●</span>
+                      <span className="text-green-600 dark:text-green-400">●</span>
                     ) : (
                       <span className="text-red-400">●</span>
                     )}
@@ -345,13 +345,13 @@ export default function VehiclesPage() {
                   <td className="px-6 py-4 text-right space-x-2">
                     <button
                       onClick={() => openEdit(v)}
-                      className="text-brand-600 hover:underline"
+                      className="text-brand-600 dark:text-brand-400 hover:underline"
                     >
                       Editar
                     </button>
                     <button
                       onClick={() => handleDelete(v)}
-                      className="text-red-500 hover:underline"
+                      className="text-red-500 dark:text-red-400 hover:underline"
                     >
                       Eliminar
                     </button>

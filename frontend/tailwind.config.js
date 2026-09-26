@@ -1,5 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  // El modo oscuro se activa con la clase `dark` en <html>, que fija el hook
+  // en ThemeContext. 'class' (y no 'media') permite que el usuario elija el
+  // tema manualmente y que la elección persista entre recargas.
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {

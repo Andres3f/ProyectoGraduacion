@@ -175,22 +175,22 @@ export default function DepotsPage() {
     <div className="max-w-7xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">🏭 Depósitos</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">🏭 Depósitos</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             Punto de partida de los camiones para las rutas de reparto.
           </p>
         </div>
         {/* Botón para registrar un nuevo depósito */}
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-xl transition shadow"
+          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 text-white text-sm font-medium rounded-xl transition shadow"
         >
           + Nuevo depósito
         </button>
       </div>
 
       {error && (
-        <div className="mb-4 bg-red-50 text-red-700 text-sm rounded-lg p-3">
+        <div className="mb-4 bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-400 text-sm rounded-lg p-3">
           {error}
         </div>
       )}
@@ -198,33 +198,33 @@ export default function DepotsPage() {
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           {/* Modal con el formulario de creación/edición de depósito */}
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-900">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">
                 {editing ? 'Editar depósito' : 'Nuevo depósito'}
               </h2>
               <button
                 onClick={() => setShowForm(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
               >
                 ✕
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                   Nombre *
                 </label>
                 <input
                   required
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                  className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                   placeholder="Ej. Patio Principal Jalapa"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                   Dirección
                 </label>
                 {/* Dirección + botón de geocoding para obtener coordenadas */}
@@ -237,14 +237,14 @@ export default function DepotsPage() {
                       setGeocodeResults([]);
                       setSearched(false);
                     }}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
                     placeholder="1 Avenida 9-28, Zona 1, Jalapa"
                   />
                   <button
                     type="button"
                     onClick={handleSearchAddress}
                     disabled={searching || form.address.trim().length < 5}
-                    className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 text-sm font-medium rounded-xl transition shrink-0"
+                    className="px-4 py-2.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-gray-200 text-sm font-medium rounded-xl transition shrink-0"
                   >
                     {searching ? 'Buscando...' : '📍 Buscar en el mapa'}
                   </button>
@@ -252,8 +252,8 @@ export default function DepotsPage() {
 
                 {/* Candidatos sugeridos por el geocodificador */}
                 {geocodeResults.length > 0 && (
-                  <div className="mt-2 text-sm border rounded-xl p-2 bg-gray-50">
-                    <p className="font-medium mb-1 text-gray-600">
+                  <div className="mt-2 text-sm border rounded-xl p-2 bg-gray-50 dark:bg-gray-900">
+                    <p className="font-medium mb-1 text-gray-600 dark:text-gray-300">
                       Se encontraron varias coincidencias, elige la correcta:
                     </p>
                     {geocodeResults.map((r, i) => (
@@ -261,7 +261,7 @@ export default function DepotsPage() {
                         key={i}
                         type="button"
                         onClick={() => pickCoords(r.lat, r.lng)}
-                        className="block text-left w-full py-1 px-1 hover:bg-gray-100 rounded"
+                        className="block text-left w-full py-1 px-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                       >
                         {r.label}
                         {r.confidence != null &&
@@ -272,7 +272,7 @@ export default function DepotsPage() {
                 )}
                 {/* Sin resultados: se invita a ubicar el punto manualmente */}
                 {searched && geocodeResults.length === 0 && (
-                  <p className="mt-2 text-xs text-amber-600">
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">
                     No se encontraron resultados. Haz clic en el mapa para ubicar
                     el punto manualmente.
                   </p>
@@ -282,7 +282,7 @@ export default function DepotsPage() {
                 {/* Mapa de confirmación: SIEMPRE visible en el formulario. El
                     usuario confirma (clic/arrastrar) antes de poder guardar. */}
                 <div className="mt-1">
-                  <p className="block text-sm font-medium text-gray-700 mb-1">
+                  <p className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Ubicación del depósito *
                   </p>
                   <MapContainer
@@ -314,7 +314,7 @@ export default function DepotsPage() {
                       />
                     )}
                   </MapContainer>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Arrastra el marcador o haz clic en el mapa para fijar la
                     ubicación exacta.
                   </p>
@@ -322,7 +322,7 @@ export default function DepotsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Latitud *
                   </label>
                   <input
@@ -331,12 +331,12 @@ export default function DepotsPage() {
                     readOnly
                     value={form.latitude}
                     aria-label="Latitud (autocompletada desde el mapa)"
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl bg-gray-50 text-gray-600 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 outline-none"
                     placeholder="14.6339"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                     Longitud *
                   </label>
                   <input
@@ -345,7 +345,7 @@ export default function DepotsPage() {
                     readOnly
                     value={form.longitude}
                     aria-label="Longitud (autocompletada desde el mapa)"
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl bg-gray-50 text-gray-600 outline-none"
+                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-900 text-gray-600 dark:text-gray-300 outline-none"
                     placeholder="-89.9886"
                   />
                 </div>
@@ -354,7 +354,7 @@ export default function DepotsPage() {
                 <button
                   type="button"
                   onClick={() => setShowForm(false)}
-                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition"
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm font-medium rounded-xl transition"
                 >
                   Cancelar
                 </button>
@@ -362,7 +362,7 @@ export default function DepotsPage() {
                   type="submit"
                   // Obliga a fijar/confirmar la ubicación en el mapa antes de guardar.
                   disabled={!form.latitude || !form.longitude || saving}
-                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition shadow"
+                  className="px-4 py-2 bg-brand-600 hover:bg-brand-700 dark:hover:bg-brand-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition shadow"
                 >
                   {saving ? 'Guardando...' : editing ? 'Guardar cambios' : 'Crear'}
                 </button>
@@ -378,14 +378,14 @@ export default function DepotsPage() {
           <div className="animate-spin rounded-full h-10 w-10 border-4 border-brand-500 border-t-transparent" />
         </div>
       ) : depots.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-gray-400 dark:text-gray-500">
           No hay depósitos registrados
         </div>
       ) : (
         /* Tabla con la lista de depósitos y sus acciones */
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-x-auto">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+            <thead className="bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400 uppercase text-xs">
               <tr>
                 <th className="px-6 py-3 text-left">Nombre</th>
                 <th className="px-6 py-3 text-left">Dirección</th>
@@ -394,12 +394,12 @@ export default function DepotsPage() {
                 <th className="px-6 py-3 text-right">Acciones</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {depots.map((d) => (
                 <tr
                   key={d.id}
-                  className={`hover:bg-gray-50 transition ${
-                    d.is_default ? 'bg-brand-50/50' : ''
+                  className={`hover:bg-gray-50 dark:hover:bg-gray-700 transition ${
+                    d.is_default ? 'bg-brand-50/50 dark:bg-gray-800/50' : ''
                   }`}
                 >
                   <td className="px-6 py-4 font-medium">
@@ -410,26 +410,26 @@ export default function DepotsPage() {
                       </span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-gray-500">{d.address || '—'}</td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-gray-400">{d.address || '—'}</td>
                   <td className="px-6 py-4 text-right">{d.latitude}</td>
                   <td className="px-6 py-4 text-right">{d.longitude}</td>
                   <td className="px-6 py-4 text-right space-x-2">
                     <button
                       onClick={() => handleSetDefault(d)}
                       disabled={d.is_default}
-                      className="text-brand-600 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Usar como predeterminado
                     </button>
                     <button
                       onClick={() => openEdit(d)}
-                      className="text-brand-600 hover:underline"
+                      className="text-brand-600 dark:text-brand-400 hover:underline"
                     >
                       Editar
                     </button>
                     <button
                       onClick={() => handleDelete(d)}
-                      className="text-red-500 hover:underline"
+                      className="text-red-500 dark:text-red-400 hover:underline"
                     >
                       Eliminar
                     </button>

@@ -8,9 +8,40 @@ import {
   useMap,
 } from 'react-leaflet';
 import L from 'leaflet';
+import { useTheme } from '../context/ThemeContext';
 
 // Coordenadas de referencia: centro de Jalapa para el mapa por defecto
 const JALAPA_CENTER = [14.6339, -89.9886];
+
+// Se usa el mismo proveedor de tiles en ambos temas (OpenStreetMap, sin API
+// key). En modo oscuro las tiles se oscurecen con un filtro CSS aplicado
+// únicamente a la capa de tiles: así los marcadores, las polilíneas de las
+// rutas y los popups conservan sus colores originales.
+const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+
+// Alterna el filtro de la capa de tiles al cambiar de tema.
+function DarkTileFilter() {
+  const map = useMap();
+  const { theme } = useTheme();
+  useEffect(() => {
+    const tilePane = map.getPane('tilePane');
+    if (!tilePane) return;
+    tilePane.classList.toggle('dark-map-tiles', theme === 'dark');
+  }, [map, theme]);
+  return null;
+}
+
+// Capa base del mapa + filtro de tema.
+function ThemeTiles() {
+  return (
+    <>
+      <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+      <DarkTileFilter />
+    </>
+  );
+}
 
 // Paleta de colores para diferenciar rutas/vehículos en el mapa
 const COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c'];
@@ -88,11 +119,8 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
       zoom={13}
       className="h-[500px] rounded-xl shadow-lg z-0"
     >
-      {/* Capa base de OpenStreetMap */}
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+      {/* Capa base del mapa, adaptada al tema */}
+      <ThemeTiles />
 
       {(hasRouteStops || depots.length > 0) && (
         <FitBounds routes={routes} depots={depots} />
@@ -108,9 +136,9 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
           <Popup>
             <strong>{d.name}</strong>
             {d.is_default && (
-              <span className="block text-xs text-gray-500">predeterminado</span>
+              <span className="block text-xs text-gray-500 dark:text-gray-400">predeterminado</span>
             )}
-            {d.address && <p className="text-xs text-gray-500">{d.address}</p>}
+            {d.address && <p className="text-xs text-gray-500 dark:text-gray-400">{d.address}</p>}
           </Popup>
         </Marker>
       ))}
@@ -179,7 +207,7 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
               <div className="flex items-center justify-between gap-2">
                 <strong>{stop.client_name}</strong>
                 {stop.eta && (
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
                     {new Date(stop.eta).toLocaleTimeString('es-GT', {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -188,12 +216,12 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
                 )}
               </div>
               <p className="text-sm">Parada {idx + 1}</p>
-              {stop.address && <p className="text-xs text-gray-500">{stop.address}</p>}
+              {stop.address && <p className="text-xs text-gray-500 dark:text-gray-400">{stop.address}</p>}
               {stop.weight_kg != null && (
                 <p className="text-xs">⚖️ {stop.weight_kg} kg</p>
               )}
               {stop.notes && (
-                <p className="mt-1 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded px-1.5 py-1">
+                <p className="mt-1 text-xs bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded px-1.5 py-1">
                   📝 {stop.notes}
                 </p>
               )}
@@ -228,26 +256,26 @@ export function RouteStepsPanel({ route }) {
   if (!steps.length) return null;
 
   return (
-    <div className="mt-4 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="mt-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
       {/* Botón para expandir/colapsar las instrucciones */}
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between px-4 py-3 text-left"
       >
-        <span className="font-semibold text-gray-900">🧭 Instrucciones de manejo</span>
-        <span className="text-gray-400">{open ? '▼' : '▲'}</span>
+        <span className="font-semibold text-gray-900 dark:text-gray-100">🧭 Instrucciones de manejo</span>
+        <span className="text-gray-400 dark:text-gray-500">{open ? '▼' : '▲'}</span>
       </button>
       {open && (
-        <ol className="divide-y divide-gray-100 max-h-72 overflow-y-auto">
+        <ol className="divide-y divide-gray-100 dark:divide-gray-700 max-h-72 overflow-y-auto">
           {/* Cada indicación muestra distancia y duración estimada */}
           {steps.map((s, i) => (
             <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-100 text-brand-700 text-xs font-bold shrink-0">
+              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 text-xs font-bold shrink-0">
                 {i + 1}
               </span>
               <div className="min-w-0">
-                <p className="text-gray-800">{s.instruction}</p>
-                <p className="text-xs text-gray-400">
+                <p className="text-gray-800 dark:text-gray-100">{s.instruction}</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500">
                   {(s.distance_m / 1000).toFixed(2)} km ·{' '}
                   {Math.round(s.duration_s / 60)} min
                 </p>

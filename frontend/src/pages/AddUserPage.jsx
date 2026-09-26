@@ -76,40 +76,40 @@ export default function AddUserPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Crear nuevo usuario</h1>
-      <p className="text-gray-500 mb-6">Solo los administradores pueden crear nuevas cuentas.</p>
+      <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Crear nuevo usuario</h1>
+      <p className="text-gray-500 dark:text-gray-400 mb-6">Solo los administradores pueden crear nuevas cuentas.</p>
 
-      <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700">
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Campo de correo electrónico del nuevo usuario */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Correo electrónico</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Correo electrónico</label>
             <input
               type="email"
               name="email"
               value={form.email}
               onChange={handleChange}
               required
-              className="w-full rounded-2xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-400"
+              className="w-full rounded-2xl border border-gray-200 dark:border-gray-700 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-400"
             />
           </div>
 
           {/* Campo de nombre completo */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Nombre completo</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Nombre completo</label>
             <input
               type="text"
               name="full_name"
               value={form.full_name}
               onChange={handleChange}
               required
-              className="w-full rounded-2xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-400"
+              className="w-full rounded-2xl border border-gray-200 dark:border-gray-700 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-400"
             />
           </div>
 
           {/* Campo de contraseña con longitud mínima de 6 caracteres */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Contraseña</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Contraseña</label>
             <input
               type="password"
               name="password"
@@ -117,18 +117,18 @@ export default function AddUserPage() {
               onChange={handleChange}
               required
               minLength={6}
-              className="w-full rounded-2xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-400"
+              className="w-full rounded-2xl border border-gray-200 dark:border-gray-700 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-400"
             />
           </div>
 
           {/* Selector de rol del nuevo usuario */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Rol</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Rol</label>
             <select
               name="role"
               value={form.role}
               onChange={handleChange}
-              className="w-full rounded-2xl border border-gray-200 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-400"
+              className="w-full rounded-2xl border border-gray-200 dark:border-gray-700 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-brand-400"
             >
               {roles.map((role) => (
                 <option key={role.value} value={role.value}>
@@ -139,14 +139,14 @@ export default function AddUserPage() {
           </div>
 
           {/* Mensajes de error y éxito de la operación */}
-          {error && <p className="text-sm text-red-500">{error}</p>}
-          {success && <p className="text-sm text-green-600">{success}</p>}
+          {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
+          {success && <p className="text-sm text-green-600 dark:text-green-400">{success}</p>}
 
           {/* Botón de envío; se deshabilita mientras se está guardando */}
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex items-center justify-center rounded-2xl bg-brand-600 px-6 py-3 text-white font-semibold hover:bg-brand-700 transition disabled:cursor-not-allowed disabled:bg-brand-300"
+            className="inline-flex items-center justify-center rounded-2xl bg-brand-600 px-6 py-3 text-white font-semibold hover:bg-brand-700 dark:hover:bg-brand-500 transition disabled:cursor-not-allowed disabled:bg-brand-300"
           >
             {loading ? 'Creando...' : 'Crear usuario'}
           </button>

@@ -4,9 +4,21 @@
 @tailwind utilities;
 
 /* Estilos globales del documento */
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  /* Hace que los controles nativos (select, input[type=time], scrollbars)
+     y los popovers del navegador se pinten oscuros en modo noche. */
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /* Evita el destello blanco al recargar en tema oscuro. */
+  @apply bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
 }
 
 /* Contenedor del mapa Leaflet: ocupa todo el espacio disponible
@@ -16,4 +28,54 @@ body {
   height: 100%;
   min-height: 400px;
   border-radius: 0.75rem;
+  /* El fondo del mapa debe seguir al tema: en oscuro, el área sin tiles. */
+  @apply bg-gray-200 dark:bg-gray-800;
+}
+
+/* Modo oscuro del mapa: se invierte y desatura únicamente la capa de tiles
+   (no el pane completo), de modo que los marcadores, las polilíneas de rutas
+   y los popups mantienen sus colores originales sobre un fondo oscuro. */
+.dark-map-tiles {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9)
+    saturate(0.75);
+}
+
+/* ── Leaflet en modo oscuro ───────────────────────────────────
+   Leaflet usa clases propias en sus panes, popups y controles, que
+   Tailwind no cubre. Estos estilos replican el tema oscuro para que
+   los elementos del mapa no queden blindinges sobre un fondo oscuro. */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  @apply bg-gray-800 text-gray-100 shadow-lg;
+}
+
+.leaflet-popup-content-wrapper {
+  @apply border border-gray-700;
+}
+
+.leaflet-popup-content {
+  @apply text-gray-100;
+}
+
+.leaflet-popup-close-button {
+  @apply text-gray-400 hover:text-gray-200;
+}
+
+/* Controles de zoom y de capas */
+.leaflet-bar a,
+.leaflet-bar a:hover {
+  @apply bg-gray-800 text-gray-100 border-gray-700;
+}
+
+.leaflet-bar a:hover {
+  @apply bg-gray-700;
+}
+
+/* Tooltip y escala */
+.leaflet-control-attribution {
+  @apply bg-gray-800/80 text-gray-400;
+}
+
+.leaflet-control-attribution a {
+  @apply text-gray-300;
 }
