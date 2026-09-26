@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -19,6 +21,14 @@ VALID_STATUSES = {"entregado", "fallido"}
 def update_stop_status(
     stop_id: int,
     status: str = Query(..., description="entregado | fallido"),
+    reason: Optional[str] = Query(
+        None,
+        max_length=500,
+        description=(
+            "Motivo de la entrega fallida. Solo se guarda si status='fallido'; "
+            "se ignora (y se limpia) al marcar la parada como entregada."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role([RoleEnum.conductor])),
 ):
@@ -26,11 +36,22 @@ def update_stop_status(
 
     Un conductor solo puede actualizar paradas de sus propias rutas; cualquier
     otra parada devuelve 404 para no filtrar información ajena.
+
+    Al marcar ``fallido`` el conductor puede enviar ``reason`` con la causa de
+    la falla (cliente ausente, acceso imposible, etc.), que queda registrada en
+    la parada y se expone en la API para los reportes.
     """
     # Valida que el estado llegue entre los permitidos por el sistema.
     if status not in VALID_STATUSES:
         raise HTTPException(
             status_code=400, detail="Estado inválido (usa 'entregado' o 'fallido')"
+        )
+
+    # Un motivo de falla sin marcar la parada como fallida no tiene sentido.
+    if reason and status != "fallido":
+        raise HTTPException(
+            status_code=400,
+            detail="El motivo de falla solo se acepta al marcar la parada como 'fallido'",
         )
 
     # Restringe la parada a las rutas cuyo driver es el usuario autenticado.
@@ -54,6 +75,12 @@ def update_stop_status(
     # Solo una entrega registra timestamp; una fallida lo limpia.
     stop.status = status
     stop.delivered_at = func.now() if status == "entregado" else None
+    # El motivo se guarda solo en las fallidas y se limpia en el resto de casos,
+    # para que una parada no arrastre el motivo de un intento anterior.
+    if status == "fallido":
+        stop.failure_reason = (reason or "").strip() or None
+    else:
+        stop.failure_reason = None
 
     # Sincroniza el estado del pedido con el resultado registrado por el
     # conductor. Sin esto, la lista de pedidos y el dashboard seguirían
@@ -82,11 +109,11 @@ def update_stop_status(
     db.commit()
     from app.services.audit import log_action
 
-    # Audita el marcado de la entrega con su estado final.
+    # Audita el marcado de la entrega con su estado final y, si falló, el motivo.
     log_action(
         db, current_user.id, "marcar_entrega",
         entidad="route_stop", entidad_id=stop_id,
-        detalle={"status": status},
+        detalle={"status": status, "motivo": stop.failure_reason},
     )
     db.commit()
     return {"detail": "Estado actualizado"}

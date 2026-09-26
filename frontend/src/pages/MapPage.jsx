@@ -176,6 +176,23 @@ export default function MapPage() {
                     </span>
                   </p>
                 )}
+                {/* Motivo de la entrega fallida, escrito por el conductor en
+                    el momento de marcarla como fallida. */}
+                {selected.stop.failure_reason && (
+                  <p className="flex items-start gap-1.5 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-200 text-sm rounded-lg px-3 py-2">
+                    <span aria-hidden>⚠️</span>
+                    <span>
+                      <span className="font-semibold">Motivo de la falla: </span>
+                      {selected.stop.failure_reason}
+                    </span>
+                  </p>
+                )}
+                {selected.stop.status === 'fallido' &&
+                  !selected.stop.failure_reason && (
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      Entrega fallida (el conductor no registró un motivo)
+                    </p>
+                  )}
                 <div className="pt-2 border-t border-gray-100 dark:border-gray-700 space-y-1">
                   <p>
                     <span className="text-gray-400 dark:text-gray-500">Ruta:</span>{' '}

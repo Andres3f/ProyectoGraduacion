@@ -260,6 +260,18 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
                   📝 {stop.notes}
                 </p>
               )}
+              {/* Motivo que el conductor registró al fallar la entrega. */}
+              {stop.failure_reason && (
+                <p className="mt-1 text-xs bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-200 rounded px-1.5 py-1">
+                  <span className="font-semibold">Motivo de la falla: </span>
+                  {stop.failure_reason}
+                </p>
+              )}
+              {stop.status === 'fallido' && !stop.failure_reason && (
+                <p className="mt-1 text-xs bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-200 rounded px-1.5 py-1">
+                  Entrega fallida (sin motivo registrado)
+                </p>
+              )}
             </Popup>
           </Marker>
         ))

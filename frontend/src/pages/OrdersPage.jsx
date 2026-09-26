@@ -401,9 +401,26 @@ export default function OrdersPage() {
                     {formatTimeWindow(o)}
                   </td>
                   <td className="px-6 py-4 text-center">
-                    <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300">
+                    <span
+                      className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
+                        o.status === 'fallido'
+                          ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-400'
+                          : o.status === 'entregado'
+                            ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
+                            : 'bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300'
+                      }`}
+                    >
                       {o.status}
                     </span>
+                    {/* Motivo que el conductor dejó al marcar la entrega fallida. */}
+                    {o.failure_reason && (
+                      <span
+                        className="block mt-1 max-w-[14rem] mx-auto text-xs font-normal text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded px-1.5 py-1"
+                        title={o.failure_reason}
+                      >
+                        {o.failure_reason}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

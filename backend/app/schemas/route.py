@@ -23,6 +23,9 @@ class RouteStopOut(BaseModel):
     distance_from_previous_km: Optional[float] = None
     status: str
     delivered_at: Optional[datetime] = None
+    # Motivo de la entrega fallida, escrito por el conductor. None si la entrega
+    # fue exitosa o la parada sigue pendiente.
+    failure_reason: Optional[str] = None
     client_name: str = ""
     address: str = ""
     latitude: float = 0.0

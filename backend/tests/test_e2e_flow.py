@@ -416,3 +416,134 @@ def test_mark_fallido_propagates_to_order(client, admin_headers):
         assert other.status == OrderStatus.en_ruta
     finally:
         db.close()
+
+
+# ── Motivo de la entrega fallida ─────────────────────────────
+
+
+def test_mark_fallido_saves_reason(client, admin_headers):
+    """El motivo que escribe el conductor queda guardado y visible en la API."""
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "motivo")
+    v1, o1, _o2 = _full_setup(client, admin_headers, driver_id, "motivo")
+    body = _optimize(client, admin_headers, [o1], v1)
+    stop = body["routes"][0]["stops"][0]
+
+    resp = client.put(
+        f"/api/route-stops/{stop['id']}/status",
+        params={"status": "fallido", "reason": "  El cliente no estaba  "},
+        headers=driver_headers,
+    )
+    assert resp.status_code == 200
+
+    # Se guarda sin los espacios sobrantes.
+    db = SessionLocal()
+    try:
+        from app.models.route_stop import RouteStop
+        assert db.get(RouteStop, stop["id"]).failure_reason == "El cliente no estaba"
+    finally:
+        db.close()
+
+    # Y el conductor lo ve al recargar su ruta.
+    mine = client.get("/api/routes/my-route", headers=driver_headers).json()
+    assert mine["stops"][0]["failure_reason"] == "El cliente no estaba"
+
+
+def test_failure_reason_requires_fallido_status(client, admin_headers):
+    """No se admite un motivo de falla si la parada no se marca como fallida."""
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "motivo2")
+    v1, o1, _o2 = _full_setup(client, admin_headers, driver_id, "motivo2")
+    body = _optimize(client, admin_headers, [o1], v1)
+    stop = body["routes"][0]["stops"][0]
+
+    resp = client.put(
+        f"/api/route-stops/{stop['id']}/status",
+        params={"status": "entregado", "reason": "se me olvidó"},
+        headers=driver_headers,
+    )
+    assert resp.status_code == 400
+
+
+def test_marking_entregado_clears_previous_failure_reason(client, admin_headers):
+    """Una parada no debe conservar el motivo de un intento fallido anterior."""
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "motivo3")
+    v1, o1, _o2 = _full_setup(client, admin_headers, driver_id, "motivo3")
+    body = _optimize(client, admin_headers, [o1], v1)
+    stop = body["routes"][0]["stops"][0]
+
+    client.put(
+        f"/api/route-stops/{stop['id']}/status",
+        params={"status": "fallido", "reason": "puerta cerrada"},
+        headers=driver_headers,
+    )
+    resp = client.put(
+        f"/api/route-stops/{stop['id']}/status",
+        params={"status": "entregado"},
+        headers=driver_headers,
+    )
+    assert resp.status_code == 200
+
+    db = SessionLocal()
+    try:
+        from app.models.route_stop import RouteStop
+        row = db.get(RouteStop, stop["id"])
+        assert row.status == "entregado"
+        assert row.failure_reason is None
+    finally:
+        db.close()
+
+
+def test_failure_reason_is_capped_at_500_chars(client, admin_headers):
+    """Un motivo más largo que el límite se rechaza en vez de truncar en silencio."""
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "motivo4")
+    v1, o1, _o2 = _full_setup(client, admin_headers, driver_id, "motivo4")
+    body = _optimize(client, admin_headers, [o1], v1)
+    stop = body["routes"][0]["stops"][0]
+
+    resp = client.put(
+        f"/api/route-stops/{stop['id']}/status",
+        params={"status": "fallido", "reason": "x" * 501},
+        headers=driver_headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_orders_list_exposes_failure_reason(client, admin_headers):
+    """El motivo de la falla se ve en la lista de pedidos (la que consulta el
+    planificador), aunque el dato viva en route_stops."""
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "motivo5")
+    v1, o1, o2 = _full_setup(client, admin_headers, driver_id, "motivo5")
+    body = _optimize(client, admin_headers, [o1, o2], v1)
+    stop = body["routes"][0]["stops"][0]
+    other_order = o1 if stop["order_id"] == o2 else o2
+
+    client.put(
+        f"/api/route-stops/{stop['id']}/status",
+        params={"status": "fallido", "reason": "no había quién recibiere"},
+        headers=driver_headers,
+    )
+
+    orders = client.get("/api/orders/", headers=admin_headers).json()
+    by_id = {o["id"]: o for o in orders}
+    assert by_id[stop["order_id"]]["failure_reason"] == "no había quién recibiere"
+    # Un pedido que no falló no lleva motivo.
+    assert by_id[other_order]["failure_reason"] is None
+    # Tampoco los pedidos que nunca salieron a ruta.
+    assert all(
+        o["failure_reason"] is None
+        for o in orders
+        if o["id"] not in (stop["order_id"], other_order)
+    )
+
+
+def test_order_detail_exposes_failure_reason(client, admin_headers):
+    driver_id, driver_headers = _create_conductor(client, admin_headers, "motivo6")
+    v1, o1, _o2 = _full_setup(client, admin_headers, driver_id, "motivo6")
+    body = _optimize(client, admin_headers, [o1], v1)
+    stop = body["routes"][0]["stops"][0]
+    client.put(
+        f"/api/route-stops/{stop['id']}/status",
+        params={"status": "fallido", "reason": "portón cerrado"},
+        headers=driver_headers,
+    )
+    detail = client.get(f"/api/orders/{o1}", headers=admin_headers).json()
+    assert detail["failure_reason"] == "portón cerrado"

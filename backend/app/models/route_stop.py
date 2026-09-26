@@ -23,6 +23,9 @@ class RouteStop(Base):
         String(20), nullable=False, default="pendiente"
     )  # pendiente/entregado/fallido — lo usará OPT-19
     delivered_at = Column(DateTime(timezone=True), nullable=True)
+    # Motivo por el que falló la entrega, escrito por el conductor al marcar la
+    # parada como 'fallido'. None si la entrega fue exitosa o sigue pendiente.
+    failure_reason = Column(String(500), nullable=True)
 
     order = relationship("Order")
     route = relationship("Route", back_populates="stops")

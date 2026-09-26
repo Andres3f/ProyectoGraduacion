@@ -16,24 +16,13 @@ export default function MyRoutePage() {
   const [route, setRoute] = useState(null);
   const [depots, setDepots] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [closing, setClosing] = useState(false);
   const [error, setError] = useState(null);
   const [updating, setUpdating] = useState(null);
-  // El conductor confirma que volvió al depósito: la ruta pasa a completada y
-  // con ella desaparece el mapa del trayecto de regreso.
-  const confirmReturn = async () => {
-    setClosing(true);
-    setError(null);
-    try {
-      const res = await api.put(`/routes/${route.id}/complete`);
-      setRoute(res.data);
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setClosing(false);
-    }
-  };
-
+  const [closing, setClosing] = useState(false);
+  // Id de la parada que está pidiendo el motivo de la falla, y el texto que el
+  // conductor está escribiendo. `null` significa que no hay ninguno abierto.
+  const [askingReason, setAskingReason] = useState(null);
+  const [reason, setReason] = useState('');
 
   // Obtiene la ruta asignada al conductor autenticado y el depósito principal
   // (necesario para dibujar el pin de salida y llegada).
@@ -62,18 +51,48 @@ export default function MyRoutePage() {
   useEffect(loadRoute, []);
 
   // Actualiza el estado de una parada (entregado/fallido) en el backend.
-  const markStatus = async (stopId, status) => {
+  // `reason` solo se envía al marcar una entrega como fallida.
+  const markStatus = async (stopId, status, reason = null) => {
     setUpdating(stopId);
     setError(null);
     try {
       await api.put(`/route-stops/${stopId}/status`, null, {
-        params: { status },
+        params: { status, ...(reason ? { reason } : {}) },
       });
+      setAskingReason(null);
+      setReason('');
       loadRoute();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setUpdating(null);
+    }
+  };
+
+  // Abre el cuadro de texto para escribir por qué falló la entrega.
+  const openReason = (stopId) => {
+    setAskingReason(stopId);
+    setReason('');
+  };
+
+  // Cierra el cuadro de texto sin marcar la parada.
+  const cancelReason = () => {
+    setAskingReason(null);
+    setReason('');
+  };
+
+  // El conductor confirma que volvió al depósito: la ruta pasa a completada y
+  // con ella desaparece el mapa del trayecto de regreso.
+  const confirmReturn = async () => {
+    setClosing(true);
+    setError(null);
+    try {
+      const res = await api.put(`/routes/${route.id}/complete`);
+      setRoute(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -221,35 +240,100 @@ export default function MyRoutePage() {
                   </div>
                 </div>
 
-                {/* Botones para marcar parada como entregada o fallida; si ya fue resuelta se muestra el estado */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {stop.status === 'pendiente' ? (
+                {/* Botones para marcar parada como entregada o fallida; si ya
+                    fue resuelta —o la ruta ya se cerró— se muestra el estado */}
+                <div className="flex flex-col items-start gap-2">
+                  {stop.status === 'pendiente' && !finished ? (
                     <>
-                      <button
-                        onClick={() => markStatus(stop.id, 'entregado')}
-                        disabled={updating === stop.id}
-                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 dark:hover:bg-green-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
-                      >
-                        {updating === stop.id ? '...' : '✅ Entregado'}
-                      </button>
-                      <button
-                        onClick={() => markStatus(stop.id, 'fallido')}
-                        disabled={updating === stop.id}
-                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 dark:hover:bg-red-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
-                      >
-                        {updating === stop.id ? '...' : '✖ Fallido'}
-                      </button>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => markStatus(stop.id, 'entregado')}
+                          disabled={updating === stop.id}
+                          className="px-3 py-1.5 bg-green-600 hover:bg-green-700 dark:hover:bg-green-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
+                        >
+                          {updating === stop.id ? '...' : '✅ Entregado'}
+                        </button>
+                        <button
+                          onClick={() => openReason(stop.id)}
+                          disabled={updating === stop.id || askingReason === stop.id}
+                          className="px-3 py-1.5 bg-red-500 hover:bg-red-600 dark:hover:bg-red-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
+                        >
+                          ✖ Fallido
+                        </button>
+                      </div>
+
+                      {/* Cuadro de texto: el conductor explica por qué falló la
+                          entrega antes de confirmar la parada como fallida. */}
+                      {askingReason === stop.id && (
+                        <div className="w-full min-w-[260px] max-w-md rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-3">
+                          <label
+                            htmlFor={`motivo-${stop.id}`}
+                            className="block text-xs font-semibold text-red-800 dark:text-red-300 mb-1.5"
+                          >
+                            ¿Por qué falló la entrega?
+                          </label>
+                          <textarea
+                            id={`motivo-${stop.id}`}
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            maxLength={500}
+                            rows={3}
+                            autoFocus
+                            placeholder="Ej.: el cliente no estaba, la puerta estaba cerrada, no había quién recibiere…"
+                            className="w-full rounded-lg border border-red-200 dark:border-red-800 bg-white dark:bg-gray-800 px-2.5 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-400"
+                          />
+                          <div className="flex items-center justify-between gap-2 mt-2">
+                            <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                              {reason.trim().length}/500
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={cancelReason}
+                                disabled={updating === stop.id}
+                                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() =>
+                                  markStatus(stop.id, 'fallido', reason.trim())
+                                }
+                                disabled={updating === stop.id || !reason.trim()}
+                                title={
+                                  reason.trim()
+                                    ? 'Confirmar la entrega fallida'
+                                    : 'Escribe el motivo para continuar'
+                                }
+                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition"
+                              >
+                                {updating === stop.id ? '...' : 'Confirmar falla'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </>
                   ) : (
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        done
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
-                          : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-400'
-                      }`}
-                    >
-                      {done ? '✅ Entregado' : '✖ Fallido'}
-                    </span>
+                    <div className="flex flex-col items-start gap-1.5">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          done
+                            ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
+                            : failed
+                              ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-400'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                        }`}
+                      >
+                        {done ? '✅ Entregado' : failed ? '✖ Fallido' : '⏳ Pendiente'}
+                      </span>
+                      {/* Motivo que el conductor registró al marcar la falla. */}
+                      {stop.failure_reason && (
+                        <p className="max-w-sm text-xs bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-200 rounded-lg px-2.5 py-1.5">
+                          <span className="font-semibold">Motivo: </span>
+                          {stop.failure_reason}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </li>
