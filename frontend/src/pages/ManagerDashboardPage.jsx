@@ -47,6 +47,24 @@ function getErrorMessage(err) {
   return JSON.stringify(detail);
 }
 
+// En las descargas el cuerpo de la respuesta (incluso el error) llega como Blob,
+// así que hay que leerlo y parsearlo para poder mostrar el mensaje real del
+// backend en vez de un "error inesperado" que oculta la causa.
+async function getDownloadErrorMessage(err) {
+  const data = err?.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text());
+      if (typeof parsed?.detail === 'string') return parsed.detail;
+      if (parsed?.detail) return JSON.stringify(parsed.detail);
+    } catch {
+      // El cuerpo no era JSON: se cae al mensaje genérico de abajo.
+    }
+    return `No se pudo generar el reporte (error ${err?.response?.status}).`;
+  }
+  return getErrorMessage(err);
+}
+
 /* Dashboard gerencial: KPIs, exportación y gráficas por rango de fechas. */
 export default function ManagerDashboardPage() {
   // Rango de fechas seleccionado (por defecto: últimos 7 días).
@@ -88,23 +106,28 @@ export default function ManagerDashboardPage() {
   }, [dateFrom, dateTo]);
 
   // Descarga el reporte del rango actual en el formato indicado (Excel o PDF).
-  const download = (format) => {
-    const url = `/api/dashboard/export?format=${format}&date_from=${dateFrom}&date_to=${dateTo}`;
-    api
-      .get(url, { responseType: 'blob' })
-      .then((res) => {
-        const blobUrl = URL.createObjectURL(res.data);
-        const link = document.createElement('a');
-        const disposition = res.headers['content-disposition'] || '';
-        const match = /filename="?([^"]+)"?/.exec(disposition);
-        link.href = blobUrl;
-        link.download = match ? match[1] : `optirutas_${dateFrom}_${dateTo}.${format}`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(blobUrl);
-      })
-      .catch((err) => setError(getErrorMessage(err)));
+  // La ruta va SIN el prefijo /api porque la instancia de axios ya lo antepone
+  // (services/api.js). Ponerlo aquí produciría /api/api/... y un 404.
+  const download = async (format) => {
+    setError(null);
+    try {
+      const res = await api.get('/dashboard/export', {
+        params: { format, date_from: dateFrom, date_to: dateTo },
+        responseType: 'blob',
+      });
+      const blobUrl = URL.createObjectURL(res.data);
+      const link = document.createElement('a');
+      const disposition = res.headers['content-disposition'] || '';
+      const match = /filename="?([^"]+)"?/.exec(disposition);
+      link.href = blobUrl;
+      link.download = match ? match[1] : `optirutas_${dateFrom}_${dateTo}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      setError(await getDownloadErrorMessage(err));
+    }
   };
 
   // Datos del gráfico de barras: distancia antes vs después por ruta.

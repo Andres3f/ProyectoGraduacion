@@ -14,6 +14,35 @@ function getErrorMessage(err, fallback) {
     : fallback;
 }
 
+/* Convierte una hora "HH:MM" a minutos desde las 00:00 (14:00 -> 840).
+   Devuelve null si el valor está vacío o no tiene el formato esperado. */
+function hhmmToMinutes(value) {
+  if (!value) return null;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 24 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+/* Convierte minutos desde las 00:00 a una hora "HH:MM" (840 -> "14:00"). */
+function minutesToHhmm(minutes) {
+  if (minutes === null || minutes === undefined) return '';
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/* Despliega la ventana de entrega de un pedido en formato de horas. */
+function formatTimeWindow(o) {
+  const start = o.time_window_start;
+  const end = o.time_window_end;
+  if (start === null || start === undefined) return 'Sin restricción';
+  if (end === null || end === undefined) return minutesToHhmm(start);
+  return `${minutesToHhmm(start)} – ${minutesToHhmm(end)}`;
+}
+
 /* Página de pedidos: lista, crea y sube pedidos por archivo (CSV/Excel). */
 export default function OrdersPage() {
   const [orders, setOrders] = useState([]);
@@ -56,9 +85,22 @@ export default function OrdersPage() {
   // Carga inicial de datos al montar la página.
   useEffect(loadData, []);
 
-  // Crea un nuevo pedido enviando el formulario al backend.
+  // Crea un nuevo pedido enviando el formulario al backend. Las horas se
+  // capturan como "HH:MM" y se envían como minutos desde las 00:00.
   const handleCreate = async (e) => {
     e.preventDefault();
+    const windowStart = hhmmToMinutes(form.time_window_start);
+    const windowEnd = hhmmToMinutes(form.time_window_end);
+    if (
+      windowStart !== null &&
+      windowEnd !== null &&
+      windowEnd <= windowStart
+    ) {
+      setUploadErrors(
+        'La hora de fin de la ventana de entrega debe ser posterior a la de inicio.'
+      );
+      return;
+    }
     setSaving(true);
     setUploadErrors(null);
     try {
@@ -66,10 +108,8 @@ export default function OrdersPage() {
         client_id: Number(form.client_id),
         weight_kg: Number(form.weight_kg),
         volume_m3: Number(form.volume_m3 || 0),
-        time_window_start: form.time_window_start
-          ? Number(form.time_window_start)
-          : null,
-        time_window_end: form.time_window_end ? Number(form.time_window_end) : null,
+        time_window_start: windowStart,
+        time_window_end: windowEnd,
         service_time_min: form.service_time_min
           ? Number(form.service_time_min)
           : null,
@@ -243,30 +283,30 @@ export default function OrdersPage() {
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ventana inicio (min)
+                    Entrega desde
                   </label>
                   <input
-                    type="number"
+                    type="time"
+                    step="900"
                     value={form.time_window_start}
                     onChange={(e) =>
                       setForm({ ...form, time_window_start: e.target.value })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                    placeholder="0"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Ventana fin (min)
+                    Entrega hasta
                   </label>
                   <input
-                    type="number"
+                    type="time"
+                    step="900"
                     value={form.time_window_end}
                     onChange={(e) =>
                       setForm({ ...form, time_window_end: e.target.value })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                    placeholder="480"
                   />
                 </div>
                 <div>
@@ -275,6 +315,7 @@ export default function OrdersPage() {
                   </label>
                   <input
                     type="number"
+                    min="0"
                     value={form.service_time_min}
                     onChange={(e) =>
                       setForm({ ...form, service_time_min: e.target.value })
@@ -284,6 +325,10 @@ export default function OrdersPage() {
                   />
                 </div>
               </div>
+              <p className="text-xs text-gray-500">
+                Ventana de entrega en horas. Déjala vacía si el pedido puede
+                entregarse a cualquier hora.
+              </p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notas
@@ -330,7 +375,9 @@ export default function OrdersPage() {
                 <th className="px-6 py-3 text-left">ID</th>
                 <th className="px-6 py-3 text-left">Cliente</th>
                 <th className="px-6 py-3 text-left">Dirección</th>
+                <th className="px-6 py-3 text-left">Notas</th>
                 <th className="px-6 py-3 text-right">Peso (kg)</th>
+                <th className="px-6 py-3 text-left">Ventana de entrega</th>
                 <th className="px-6 py-3 text-center">Estado</th>
               </tr>
             </thead>
@@ -340,7 +387,19 @@ export default function OrdersPage() {
                   <td className="px-6 py-4 font-medium">{o.id}</td>
                   <td className="px-6 py-4">{o.client_name}</td>
                   <td className="px-6 py-4 text-gray-500">{o.address}</td>
+                  <td className="px-6 py-4 max-w-xs">
+                    {o.notes ? (
+                      <span className="block truncate" title={o.notes}>
+                        {o.notes}
+                      </span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-right">{o.weight_kg}</td>
+                  <td className="px-6 py-4 text-gray-500">
+                    {formatTimeWindow(o)}
+                  </td>
                   <td className="px-6 py-4 text-center">
                     <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-brand-100 text-brand-700">
                       {o.status}

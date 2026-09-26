@@ -14,16 +14,20 @@ function getErrorMessage(err) {
 /* Página del conductor: muestra su ruta asignada y permite marcar el estado de cada parada. */
 export default function MyRoutePage() {
   const [route, setRoute] = useState(null);
+  const [depots, setDepots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [updating, setUpdating] = useState(null);
 
-  // Obtiene la ruta asignada al conductor autenticado.
+  // Obtiene la ruta asignada al conductor autenticado y el depósito principal
+  // (necesario para dibujar el pin de salida y llegada).
   const loadRoute = () => {
     setLoading(true);
-    api
-      .get('/routes/my-route')
-      .then((res) => setRoute(res.data))
+    Promise.all([api.get('/routes/my-route'), api.get('/depots/')])
+      .then(([routeRes, depotsRes]) => {
+        setRoute(routeRes.data);
+        setDepots(depotsRes.data);
+      })
       .catch((err) => setError(getErrorMessage(err)))
       .finally(() => setLoading(false));
   };
@@ -103,7 +107,7 @@ export default function MyRoutePage() {
       {/* Mapa pequeño con solo esta ruta */}
       {(route?.stops?.length ?? 0) > 0 && (
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6">
-          <MapView routes={[{ ...route, stops: route.stops }]} />
+          <MapView routes={[{ ...route, stops: route.stops }]} depots={depots} />
           <RouteStepsPanel route={route} />
         </div>
       )}
@@ -131,6 +135,17 @@ export default function MyRoutePage() {
                     <p className="text-sm text-gray-500 truncate">
                       {stop.address} · {stop.weight_kg} kg
                     </p>
+                    {/* Notas de entrega: instrucciones que el conductor debe leer
+                        antes de llegar al punto (acceso, contacto, Etc.). */}
+                    {stop.notes && (
+                      <p className="mt-2 flex items-start gap-1.5 bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-lg px-3 py-2">
+                        <span aria-hidden>📝</span>
+                        <span className="min-w-0">
+                          <span className="font-semibold">Nota: </span>
+                          {stop.notes}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 </div>
 

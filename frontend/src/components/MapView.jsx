@@ -80,7 +80,7 @@ function depotForRoute(route, depots) {
 
 // Componente principal del mapa: dibuja rutas, paradas numeradas y pedidos sueltos.
 export default function MapView({ routes = [], markers = [], depots = [], onSelectStop }) {
-  const hasRouteStops = routes.some((r) => (r.stops?.length ?? 0) > 1);
+  const hasRouteStops = routes.some((r) => (r.stops?.length ?? 0) > 0);
 
   return (
     <MapContainer
@@ -120,7 +120,9 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
         const validStops = (route.stops ?? []).filter((s) =>
           stopCoordsWithin(s)
         );
-        if (validStops.length < 2) return null;
+        // Una sola parada también es una ruta válida: se dibuja el tramo
+        // depósito -> punto de entrega (y el regreso en el fallback).
+        if (validStops.length < 1) return null;
 
         if (route.route_geometry?.coordinates?.length > 1) {
           // Geometría real de ORS: GeoJSON LineString [[lng,lat], ...]
@@ -189,6 +191,11 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
               {stop.address && <p className="text-xs text-gray-500">{stop.address}</p>}
               {stop.weight_kg != null && (
                 <p className="text-xs">⚖️ {stop.weight_kg} kg</p>
+              )}
+              {stop.notes && (
+                <p className="mt-1 text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded px-1.5 py-1">
+                  📝 {stop.notes}
+                </p>
               )}
             </Popup>
           </Marker>

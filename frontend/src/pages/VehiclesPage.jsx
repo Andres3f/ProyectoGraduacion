@@ -11,6 +11,8 @@ function getErrorMessage(err) {
 }
 
 // Modelo inicial del formulario de vehículo (creación).
+// Nota: ya no se guarda un depósito por vehículo; todas las rutas salen del
+// depósito principal del sistema.
 const EMPTY = {
   plate: '',
   description: '',
@@ -19,7 +21,6 @@ const EMPTY = {
   status: 'disponible',
   is_active: true,
   driver_id: '',
-  depot_id: '',
 };
 
 /* Página de vehículos: lista, crea, edita y elimina la flota. */
@@ -70,7 +71,6 @@ export default function VehiclesPage() {
       status: v.status,
       is_active: v.is_active,
       driver_id: v.driver_id ?? '',
-      depot_id: v.depot_id ?? '',
     });
     setError(null);
     setShowForm(true);
@@ -86,7 +86,6 @@ export default function VehiclesPage() {
       capacity_kg: Number(form.capacity_kg),
       capacity_m3: Number(form.capacity_m3 || 0),
       driver_id: form.driver_id ? Number(form.driver_id) : null,
-      depot_id: form.depot_id ? Number(form.depot_id) : null,
     };
     try {
       if (editing) {
@@ -120,6 +119,9 @@ export default function VehiclesPage() {
 
   const driverName = (id) =>
     drivers.find((d) => d.id === id)?.full_name || '—';
+
+  // Todos los vehículos salen del depósito principal (is_default).
+  const mainDepot = depots.find((d) => d.is_default);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -231,26 +233,6 @@ export default function VehiclesPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Depósito de salida
-                </label>
-                <select
-                  value={form.depot_id}
-                  onChange={(e) =>
-                    setForm({ ...form, depot_id: e.target.value })
-                  }
-                  className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-brand-500 outline-none"
-                >
-                  <option value="">Usar el depósito predeterminado</option>
-                  {depots.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name}
-                      {d.is_default ? ' (predeterminado)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
               {editing && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -328,7 +310,7 @@ export default function VehiclesPage() {
                 <th className="px-6 py-3 text-left">Descripción</th>
                 <th className="px-6 py-3 text-right">Capacidad</th>
                 <th className="px-6 py-3 text-left">Conductor</th>
-                <th className="px-6 py-3 text-left">Depósito</th>
+                <th className="px-6 py-3 text-left">Depósito de salida</th>
                 <th className="px-6 py-3 text-center">Estado</th>
                 <th className="px-6 py-3 text-center">Activo</th>
                 <th className="px-6 py-3 text-right">Acciones</th>
@@ -346,7 +328,7 @@ export default function VehiclesPage() {
                   </td>
                   <td className="px-6 py-4">{driverName(v.driver_id)}</td>
                   <td className="px-6 py-4">
-                    {depots.find((d) => d.id === v.depot_id)?.name || 'Por defecto'}
+                    {mainDepot?.name || 'Depósito principal'}
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span className="inline-block px-2 py-1 rounded-full text-xs font-semibold bg-brand-100 text-brand-700">
