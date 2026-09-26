@@ -50,7 +50,11 @@ class Route(Base):
     )
     # Geometría real por carretera (GeoJSON LineString de ORS) + instrucciones
     # de manejo por tramo. None si no se pudo obtener (fallback línea recta).
+    # Se guarda separada por trayecto para poder dibujarlas con colores
+    # distintos: `route_geometry` es la ida (depósito -> última parada) y
+    # `route_geometry_return` el regreso (última parada -> depósito).
     route_geometry = Column(JSON, nullable=True)
+    route_geometry_return = Column(JSON, nullable=True)
     steps = Column(JSON, nullable=True)
 
     # Paradas relacionadas (tabla route_stops), ordenadas por secuencia.

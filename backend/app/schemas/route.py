@@ -23,6 +23,9 @@ class RouteStopOut(BaseModel):
     distance_from_previous_km: Optional[float] = None
     status: str
     delivered_at: Optional[datetime] = None
+    # Motivo de la entrega fallida, escrito por el conductor. None si la entrega
+    # fue exitosa o la parada sigue pendiente.
+    failure_reason: Optional[str] = None
     client_name: str = ""
     address: str = ""
     latitude: float = 0.0
@@ -43,7 +46,11 @@ class RouteOut(BaseModel):
     driver_id: Optional[int]
     depot_id: Optional[int] = None
     stops: List[RouteStopOut] = []
+    # Geometría del trayecto de ida (depósito -> última parada).
     route_geometry: Optional[dict] = None
+    # Geometría del trayecto de regreso (última parada -> depósito). El mapa la
+    # dibuja en otro color para distinguirla de la ida.
+    route_geometry_return: Optional[dict] = None
     steps: Optional[List[dict]] = None
     total_distance_km: Optional[float]
     total_duration_min: Optional[float]

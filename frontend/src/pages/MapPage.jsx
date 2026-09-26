@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import MapView, { ROUTE_COLORS, RouteStepsPanel } from '../components/MapView';
+import MapView, { ROUTE_COLORS, ROUTE_RETURN_COLORS, RouteStepsPanel } from '../components/MapView';
 
 /* Estados de ruta que ya no se dibujan en el mapa: una ruta completada ya fue
    entregada en su totalidad y una cancelada nunca se ejecutó, así que ninguna
@@ -108,7 +108,8 @@ export default function MapPage() {
             {/* Mapa con las rutas y panel de pasos de la ruta seleccionada */}
             <MapView routes={enrichedRoutes} depots={depots} onSelectStop={handleSelectStop} />
             <RouteStepsPanel route={selected?.route} />
-            {/* Leyenda de colores por ruta */}
+            {/* Leyenda: para cada ruta, el color de la ida (continua) y el de
+                la vuelta al depósito (punteada) */}
             <div className="flex flex-wrap gap-3 mt-3 text-sm text-gray-500 dark:text-gray-400">
               {enrichedRoutes.map((r, i) => (
                 <span key={r.id} className="flex items-center gap-1.5">
@@ -117,6 +118,12 @@ export default function MapPage() {
                     style={{ background: ROUTE_COLORS[i % ROUTE_COLORS.length] }}
                   />
                   {r.name || `Ruta #${r.id}`}
+                  <span
+                    className="inline-block w-3 h-3 rounded-full ml-1"
+                    style={{
+                      background: ROUTE_RETURN_COLORS[i % ROUTE_RETURN_COLORS.length],
+                    }}
+                  />
                 </span>
               ))}
               {enrichedRoutes.length === 0 && (
@@ -124,6 +131,12 @@ export default function MapPage() {
                   {routes.length > 0
                     ? 'Todas las rutas ya fueron completadas o canceladas, por lo que no hay nada activo en el mapa.'
                     : 'No hay rutas con paradas para mostrar.'}
+                </span>
+              )}
+              {enrichedRoutes.length > 0 && (
+                <span className="w-full text-xs text-gray-400 dark:text-gray-500">
+                  Línea continua: ruta de entrega (ida). Línea punteada: retorno
+                  al depósito.
                 </span>
               )}
             </div>
@@ -163,6 +176,23 @@ export default function MapPage() {
                     </span>
                   </p>
                 )}
+                {/* Motivo de la entrega fallida, escrito por el conductor en
+                    el momento de marcarla como fallida. */}
+                {selected.stop.failure_reason && (
+                  <p className="flex items-start gap-1.5 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-200 text-sm rounded-lg px-3 py-2">
+                    <span aria-hidden>⚠️</span>
+                    <span>
+                      <span className="font-semibold">Motivo de la falla: </span>
+                      {selected.stop.failure_reason}
+                    </span>
+                  </p>
+                )}
+                {selected.stop.status === 'fallido' &&
+                  !selected.stop.failure_reason && (
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      Entrega fallida (el conductor no registró un motivo)
+                    </p>
+                  )}
                 <div className="pt-2 border-t border-gray-100 dark:border-gray-700 space-y-1">
                   <p>
                     <span className="text-gray-400 dark:text-gray-500">Ruta:</span>{' '}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -46,7 +46,13 @@ function ThemeTiles() {
 // Paleta de colores para diferenciar rutas/vehículos en el mapa
 const COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#ea580c'];
 
+// Paleta del trayecto de regreso al depósito. Comparte índice con la de ida
+// para que cada vuelta siga gehöciendo a su ruta, pero con un tono distinto
+// que permite separar el camino de ida del de vuelta a simple vista.
+const RETURN_COLORS = ['#0d9488', '#ca8a04', '#db2777', '#0891b2', '#65a30d'];
+
 export const ROUTE_COLORS = COLORS;
+export const ROUTE_RETURN_COLORS = RETURN_COLORS;
 
 // Crea un marcador circular numerado con el color del vehículo/ruta
 function numberedIcon(number, color) {
@@ -76,6 +82,14 @@ function stopCoords(s) {
 function stopCoordsWithin(s) {
   const [lat, lng] = stopCoords(s);
   return Number.isFinite(lat) && Number.isFinite(lng);
+}
+
+// Convierte una geometría GeoJSON LineString ([[lng, lat], ...]) al formato de
+// Leaflet ([lat, lng]), descartando los puntos que no sean numéricos.
+function toLatLngs(geometry) {
+  return (geometry?.coordinates ?? [])
+    .map(([lng, lat]) => [lat, lng])
+    .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
 }
 
 // Ajusta automáticamente el encuadre del mapa para que todas las
@@ -143,7 +157,8 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
         </Marker>
       ))}
 
-      {/* Polilíneas por vehículo */}
+      {/* Polilíneas por vehículo: la ida (color de la ruta) y el regreso al
+          depósito (otro color y punteado) se dibujan por separado */}
       {routes.map((route, i) => {
         const validStops = (route.stops ?? []).filter((s) =>
           stopCoordsWithin(s)
@@ -152,40 +167,60 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
         // depósito -> punto de entrega (y el regreso en el fallback).
         if (validStops.length < 1) return null;
 
-        if (route.route_geometry?.coordinates?.length > 1) {
-          // Geometría real de ORS: GeoJSON LineString [[lng,lat], ...]
-          const positions = route.route_geometry.coordinates.map(
-            ([lng, lat]) => [lat, lng]
-          );
+        const key = route.id || i;
+        const color = COLORS[i % COLORS.length];
+        const returnColor = RETURN_COLORS[i % RETURN_COLORS.length];
+
+        // Geometría real de ORS: la de ida y la de vuelta se guardan por
+        // separado en la API para poder pintarlas con colores distintos.
+        const outbound = toLatLngs(route.route_geometry);
+        const inbound = toLatLngs(route.route_geometry_return);
+        if (outbound.length > 1) {
           return (
-            <Polyline
-              key={`line-${route.id || i}`}
-              positions={positions}
-              pathOptions={{ color: COLORS[i % COLORS.length], weight: 4 }}
-            />
+            <Fragment key={`line-${key}`}>
+              {/* Ida: depósito -> paradas, línea continua */}
+              <Polyline positions={outbound} pathOptions={{ color, weight: 4 }} />
+              {/* Regreso: última parada -> depósito, otro color y punteado */}
+              {inbound.length > 1 && (
+                <Polyline
+                  positions={inbound}
+                  pathOptions={{
+                    color: returnColor,
+                    weight: 3,
+                    dashArray: '8 8',
+                  }}
+                />
+              )}
+            </Fragment>
           );
         }
 
-        // Fallback: línea recta punteada desde el depósito de la ruta, por
-        // cada parada y de regreso al depósito (aproximación).
+        // Fallback: línea recta desde el depósito de la ruta, por cada parada
+        // y de regreso al depósito (aproximación).
         const depot = depotForRoute(route, depots);
         const depotPos = depot
           ? [[depot.latitude, depot.longitude]]
           : [];
+        const stopPos = validStops.map(stopCoords);
         return (
-          <Polyline
-            key={`line-${route.id || i}`}
-            positions={[
-              ...depotPos,
-              ...validStops.map(stopCoords),
-              ...depotPos,
-            ]}
-            pathOptions={{
-              color: COLORS[i % COLORS.length],
-              weight: 4,
-              dashArray: '6 6',
-            }}
-          />
+          <Fragment key={`line-${key}`}>
+            <Polyline
+              positions={[...depotPos, ...stopPos]}
+              pathOptions={{ color, weight: 4, dashArray: '6 6' }}
+            />
+            {/* Con una sola parada el regreso se superpondría a la ida, así que
+                solo se dibuja si hay más de una parada de entrega. */}
+            {stopPos.length > 1 && (
+              <Polyline
+                positions={[...stopPos].reverse()}
+                pathOptions={{
+                  color: returnColor,
+                  weight: 3,
+                  dashArray: '2 8',
+                }}
+              />
+            )}
+          </Fragment>
         );
       })}
 
@@ -223,6 +258,18 @@ export default function MapView({ routes = [], markers = [], depots = [], onSele
               {stop.notes && (
                 <p className="mt-1 text-xs bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 rounded px-1.5 py-1">
                   📝 {stop.notes}
+                </p>
+              )}
+              {/* Motivo que el conductor registró al fallar la entrega. */}
+              {stop.failure_reason && (
+                <p className="mt-1 text-xs bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-200 rounded px-1.5 py-1">
+                  <span className="font-semibold">Motivo de la falla: </span>
+                  {stop.failure_reason}
+                </p>
+              )}
+              {stop.status === 'fallido' && !stop.failure_reason && (
+                <p className="mt-1 text-xs bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-200 rounded px-1.5 py-1">
+                  Entrega fallida (sin motivo registrado)
                 </p>
               )}
             </Popup>
@@ -266,23 +313,36 @@ export function RouteStepsPanel({ route }) {
         <span className="text-gray-400 dark:text-gray-500">{open ? '▼' : '▲'}</span>
       </button>
       {open && (
-        <ol className="divide-y divide-gray-100 dark:divide-gray-700 max-h-72 overflow-y-auto">
-          {/* Cada indicación muestra distancia y duración estimada */}
-          {steps.map((s, i) => (
-            <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 text-xs font-bold shrink-0">
-                {i + 1}
-              </span>
-              <div className="min-w-0">
-                <p className="text-gray-800 dark:text-gray-100">{s.instruction}</p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">
-                  {(s.distance_m / 1000).toFixed(2)} km ·{' '}
-                  {Math.round(s.duration_s / 60)} min
-                </p>
-              </div>
-            </li>
-          ))}
-        </ol>
+          <ol className="divide-y divide-gray-100 dark:divide-gray-700 max-h-72 overflow-y-auto">
+            {/* Cada indicación muestra distancia y duración estimada, y a qué
+                trayecto pertenece (ida al cliente o vuelta al depósito) */}
+            {steps.map((s, i) => (
+              <li key={i} className="flex items-start gap-3 px-4 py-2.5 text-sm">
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300 text-xs font-bold shrink-0">
+                  {i + 1}
+                </span>
+                <div className="min-w-0">
+                  {s.leg && (
+                    <span
+                      className={`inline-block px-1.5 py-0.5 mb-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
+                        s.leg === 'vuelta'
+                          ? 'bg-teal-100 dark:bg-teal-900 text-teal-800 dark:text-teal-200'
+                          : 'bg-brand-100 dark:bg-brand-900 text-brand-700 dark:text-brand-300'
+                      }`}
+                    >
+                      {s.leg === 'vuelta' ? 'Vuelta' : 'Ida'}
+                    </span>
+                  )}
+                  <p className="text-gray-800 dark:text-gray-100">{s.instruction}</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">
+                    {(s.distance_m / 1000).toFixed(2)} km ·{' '}
+                    {Math.round(s.duration_s / 60)} min
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+
       )}
     </div>
   );

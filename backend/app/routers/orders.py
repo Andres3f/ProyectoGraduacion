@@ -35,6 +35,42 @@ def _get_client_or_400(db: Session, client_id: int) -> Client:
     return client
 
 
+# Motivo de la última entrega fallida de cada pedido, indexado por order_id.
+# Vive en `route_stops` (lo escribe el conductor) y se adjunta al pedido solo
+# para exponerlo en la lista; no se duplica en la tabla de pedidos. Si un
+# pedido acumula varias paradas fallidas, gana la más reciente.
+def _attach_failure_reasons(db: Session, orders: List[Order]) -> None:
+    if not orders:
+        return
+    from sqlalchemy import func
+    from app.models.route_stop import RouteStop
+
+    order_ids = [o.id for o in orders]
+    # Subconsulta con el id de la parada fallida más reciente de cada pedido.
+    latest = (
+        db.query(
+            RouteStop.order_id.label("order_id"),
+            func.max(RouteStop.id).label("stop_id"),
+        )
+        .filter(
+            RouteStop.order_id.in_(order_ids),
+            RouteStop.failure_reason.isnot(None),
+        )
+        .group_by(RouteStop.order_id)
+        .subquery()
+    )
+    rows = (
+        db.query(RouteStop.order_id, RouteStop.failure_reason)
+        .join(latest, RouteStop.id == latest.c.stop_id)
+        .all()
+    )
+    reasons = {order_id: reason for order_id, reason in rows}
+    # `failure_reason` no es una columna mapeada: se asigna como atributo en
+    # memoria para que Pydantic lo lea al construir el OrderOut.
+    for order in orders:
+        order.failure_reason = reasons.get(order.id)
+
+
 # Consulta general de pedidos para cualquier usuario autenticado.
 @router.get("/", response_model=List[OrderOut])
 @router.get("", response_model=List[OrderOut], include_in_schema=False)
@@ -43,7 +79,9 @@ def list_orders(
     current_user: User = Depends(get_current_user),
 ):
     """Listar pedidos."""
-    return db.query(Order).all()
+    orders = db.query(Order).all()
+    _attach_failure_reasons(db, orders)
+    return orders
 
 
 # Alta de pedido: captura el snapshot del cliente en el momento de la creación.
@@ -173,6 +211,7 @@ def get_order(
     order = db.query(Order).filter(Order.id == order_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    _attach_failure_reasons(db, [order])
     return order
 
 

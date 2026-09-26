@@ -18,6 +18,11 @@ export default function MyRoutePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [updating, setUpdating] = useState(null);
+  const [closing, setClosing] = useState(false);
+  // Id de la parada que está pidiendo el motivo de la falla, y el texto que el
+  // conductor está escribiendo. `null` significa que no hay ninguno abierto.
+  const [askingReason, setAskingReason] = useState(null);
+  const [reason, setReason] = useState('');
 
   // Obtiene la ruta asignada al conductor autenticado y el depósito principal
   // (necesario para dibujar el pin de salida y llegada).
@@ -27,8 +32,18 @@ export default function MyRoutePage() {
       .then(([routeRes, depotsRes]) => {
         setRoute(routeRes.data);
         setDepots(depotsRes.data);
+        setError(null);
       })
-      .catch((err) => setError(getErrorMessage(err)))
+      .catch((err) => {
+        // Un 404 aquí significa que el conductor no tiene ninguna ruta (ni
+        // activa ni completada); no es un fallo de la pantalla.
+        if (err?.response?.status === 404) {
+          setRoute(null);
+          setError(null);
+        } else {
+          setError(getErrorMessage(err));
+        }
+      })
       .finally(() => setLoading(false));
   };
 
@@ -36,18 +51,48 @@ export default function MyRoutePage() {
   useEffect(loadRoute, []);
 
   // Actualiza el estado de una parada (entregado/fallido) en el backend.
-  const markStatus = async (stopId, status) => {
+  // `reason` solo se envía al marcar una entrega como fallida.
+  const markStatus = async (stopId, status, reason = null) => {
     setUpdating(stopId);
     setError(null);
     try {
       await api.put(`/route-stops/${stopId}/status`, null, {
-        params: { status },
+        params: { status, ...(reason ? { reason } : {}) },
       });
+      setAskingReason(null);
+      setReason('');
       loadRoute();
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
       setUpdating(null);
+    }
+  };
+
+  // Abre el cuadro de texto para escribir por qué falló la entrega.
+  const openReason = (stopId) => {
+    setAskingReason(stopId);
+    setReason('');
+  };
+
+  // Cierra el cuadro de texto sin marcar la parada.
+  const cancelReason = () => {
+    setAskingReason(null);
+    setReason('');
+  };
+
+  // El conductor confirma que volvió al depósito: la ruta pasa a completada y
+  // con ella desaparece el mapa del trayecto de regreso.
+  const confirmReturn = async () => {
+    setClosing(true);
+    setError(null);
+    try {
+      const res = await api.put(`/routes/${route.id}/complete`);
+      setRoute(res.data);
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -76,9 +121,16 @@ export default function MyRoutePage() {
   }
 
   // Indica si todas las paradas ya fueron resueltas (entregadas o fallidas).
-  const resolved = (route?.stops || []).every((s) =>
+  const stops = route?.stops || [];
+  const resolved = stops.length > 0 && stops.every((s) =>
     ['entregado', 'fallido'].includes(s.status)
   );
+  // El mapa solo se muestra mientras el viaje está en marcha: al confirmar el
+  // regreso al depósito la ruta queda completada y el mapa desaparece.
+  const finished = route?.status === 'completada';
+  const showMap = stops.length > 0 && !finished;
+  const deliveredCount = stops.filter((s) => s.status === 'entregado').length;
+  const failedCount = stops.filter((s) => s.status === 'fallido').length;
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -86,16 +138,20 @@ export default function MyRoutePage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">🚚 Mi Ruta</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-            {route?.name || `Ruta #${route?.id}`} · {route?.stops?.length ?? 0}{' '}
+            {route?.name || `Ruta #${route?.id}`} · {stops.length}{' '}
             paradas · {route?.status}
           </p>
         </div>
-        {/* Insignia cuando la ruta está completada */}
-        {resolved && (
-          <span className="px-4 py-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400 text-sm font-semibold">
-            ✅ Ruta completada
+        {/* Insignia de resumen: al terminar todas las paradas, o al cerrar la ruta */}
+        {finished ? (
+          <span className="px-4 py-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-sm font-semibold">
+            🏁 Ruta finalizada
           </span>
-        )}
+        ) : resolved ? (
+          <span className="px-4 py-2 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400 text-sm font-semibold">
+            ✅ Entregas completadas · regresando al depósito
+          </span>
+        ) : null}
       </div>
 
       {error && (
@@ -104,10 +160,45 @@ export default function MyRoutePage() {
         </div>
       )}
 
-      {/* Mapa pequeño con solo esta ruta */}
-      {(route?.stops?.length ?? 0) > 0 && (
+      {/* Panel de ruta finalizada: el mapa ya se ocultó porque el conductor
+          confirmó su regreso al depósito. */}
+      {finished && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-sm border border-gray-100 dark:border-gray-700 text-center mb-6">
+          <p className="text-5xl mb-3" aria-hidden>🏭</p>
+          <p className="text-gray-900 dark:text-gray-100 font-semibold mb-1">
+            Volviste al depósito. ¡Ruta cerrada!
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {deliveredCount} entrega(s) realizadas
+            {failedCount > 0 && ` · ${failedCount} fallida(s)`}
+            {route?.total_distance_km != null &&
+              ` · ${route.total_distance_km} km recorridos`}
+          </p>
+        </div>
+      )}
+
+      {/* Botón de cierre: solo aparece cuando ya no quedan paradas por resolver,
+          para que el mapa siga visible durante el trayecto de regreso. */}
+      {resolved && !finished && (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
+          <p className="text-gray-700 dark:text-gray-300 text-sm mb-3">
+            Ya hiciste todas las entregas. Cuando regreses al depósito, confirma
+            el retorno para cerrar la ruta y quitar el mapa.
+          </p>
+          <button
+            onClick={confirmReturn}
+            disabled={closing}
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg transition"
+          >
+            {closing ? 'Cerrando...' : '🏠 Ya regresé al depósito'}
+          </button>
+        </div>
+      )}
+
+      {/* Mapa pequeño con solo esta ruta (se oculta al cerrar la ruta) */}
+      {showMap && (
         <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
-          <MapView routes={[{ ...route, stops: route.stops }]} depots={depots} />
+          <MapView routes={[{ ...route, stops }]} depots={depots} />
           <RouteStepsPanel route={route} />
         </div>
       )}
@@ -115,7 +206,7 @@ export default function MyRoutePage() {
       {/* Lista de paradas en orden */}
       <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-          {(route?.stops || []).map((stop, idx) => {
+          {stops.map((stop, idx) => {
             // Estado actual de la parada para decidir qué mostrar.
             const done = stop.status === 'entregado';
             const failed = stop.status === 'fallido';
@@ -149,35 +240,100 @@ export default function MyRoutePage() {
                   </div>
                 </div>
 
-                {/* Botones para marcar parada como entregada o fallida; si ya fue resuelta se muestra el estado */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {stop.status === 'pendiente' ? (
+                {/* Botones para marcar parada como entregada o fallida; si ya
+                    fue resuelta —o la ruta ya se cerró— se muestra el estado */}
+                <div className="flex flex-col items-start gap-2">
+                  {stop.status === 'pendiente' && !finished ? (
                     <>
-                      <button
-                        onClick={() => markStatus(stop.id, 'entregado')}
-                        disabled={updating === stop.id}
-                        className="px-3 py-1.5 bg-green-600 hover:bg-green-700 dark:hover:bg-green-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
-                      >
-                        {updating === stop.id ? '...' : '✅ Entregado'}
-                      </button>
-                      <button
-                        onClick={() => markStatus(stop.id, 'fallido')}
-                        disabled={updating === stop.id}
-                        className="px-3 py-1.5 bg-red-500 hover:bg-red-600 dark:hover:bg-red-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
-                      >
-                        {updating === stop.id ? '...' : '✖ Fallido'}
-                      </button>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          onClick={() => markStatus(stop.id, 'entregado')}
+                          disabled={updating === stop.id}
+                          className="px-3 py-1.5 bg-green-600 hover:bg-green-700 dark:hover:bg-green-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
+                        >
+                          {updating === stop.id ? '...' : '✅ Entregado'}
+                        </button>
+                        <button
+                          onClick={() => openReason(stop.id)}
+                          disabled={updating === stop.id || askingReason === stop.id}
+                          className="px-3 py-1.5 bg-red-500 hover:bg-red-600 dark:hover:bg-red-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition"
+                        >
+                          ✖ Fallido
+                        </button>
+                      </div>
+
+                      {/* Cuadro de texto: el conductor explica por qué falló la
+                          entrega antes de confirmar la parada como fallida. */}
+                      {askingReason === stop.id && (
+                        <div className="w-full min-w-[260px] max-w-md rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 p-3">
+                          <label
+                            htmlFor={`motivo-${stop.id}`}
+                            className="block text-xs font-semibold text-red-800 dark:text-red-300 mb-1.5"
+                          >
+                            ¿Por qué falló la entrega?
+                          </label>
+                          <textarea
+                            id={`motivo-${stop.id}`}
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            maxLength={500}
+                            rows={3}
+                            autoFocus
+                            placeholder="Ej.: el cliente no estaba, la puerta estaba cerrada, no había quién recibiere…"
+                            className="w-full rounded-lg border border-red-200 dark:border-red-800 bg-white dark:bg-gray-800 px-2.5 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-red-400"
+                          />
+                          <div className="flex items-center justify-between gap-2 mt-2">
+                            <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                              {reason.trim().length}/500
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={cancelReason}
+                                disabled={updating === stop.id}
+                                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50 transition"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() =>
+                                  markStatus(stop.id, 'fallido', reason.trim())
+                                }
+                                disabled={updating === stop.id || !reason.trim()}
+                                title={
+                                  reason.trim()
+                                    ? 'Confirmar la entrega fallida'
+                                    : 'Escribe el motivo para continuar'
+                                }
+                                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition"
+                              >
+                                {updating === stop.id ? '...' : 'Confirmar falla'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </>
                   ) : (
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        done
-                          ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
-                          : 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-400'
-                      }`}
-                    >
-                      {done ? '✅ Entregado' : '✖ Fallido'}
-                    </span>
+                    <div className="flex flex-col items-start gap-1.5">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          done
+                            ? 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-400'
+                            : failed
+                              ? 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-400'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+                        }`}
+                      >
+                        {done ? '✅ Entregado' : failed ? '✖ Fallido' : '⏳ Pendiente'}
+                      </span>
+                      {/* Motivo que el conductor registró al marcar la falla. */}
+                      {stop.failure_reason && (
+                        <p className="max-w-sm text-xs bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 text-red-900 dark:text-red-200 rounded-lg px-2.5 py-1.5">
+                          <span className="font-semibold">Motivo: </span>
+                          {stop.failure_reason}
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </li>

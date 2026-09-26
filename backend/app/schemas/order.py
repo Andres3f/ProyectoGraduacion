@@ -63,5 +63,9 @@ class OrderOut(BaseModel):
     service_time_min: Optional[int]
     notes: Optional[str]
     created_at: datetime
+    # Motivo de la última entrega fallida de este pedido, escrito por el
+    # conductor. Se resuelve desde la tabla route_stops (no se duplica aquí);
+    # None si el pedido nunca estuvo en una parada fallida.
+    failure_reason: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
