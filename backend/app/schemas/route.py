@@ -28,6 +28,8 @@ class RouteStopOut(BaseModel):
     latitude: float = 0.0
     longitude: float = 0.0
     weight_kg: float = 0.0
+    # Notas de entrega del pedido: instrucciones de acceso, contacto, etc.
+    notes: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
